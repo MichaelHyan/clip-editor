@@ -1,0 +1,23 @@
+{
+  "ok": true,
+  "path": "D:/bgm/1/09az5dZyNMk.mp4",
+  "name": "09az5dZyNMk.mp4",
+  "kind": "video",
+  "fingerprint": "2587f91ca6898acc",
+  "size": 15028527,
+  "duration": 45.766667,
+  "bitrate": 2626982,
+  "format": "mov,mp4,m4a,3gp,3g2,mj2",
+  "has_video": true,
+  "has_audio": true,
+  "width": 800,
+  "height": 800,
+  "fps": 30.0,
+  "video_codec": "h264",
+  "pix_fmt": "yuv420p",
+  "sample_rate": 44100,
+  "channels": 2,
+  "audio_codec": "aac",
+  "browser_ok": true,
+  "browser_issues": []
+}

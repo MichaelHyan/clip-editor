@@ -1,0 +1,73 @@
+{
+  "id": "proj_00c13582b005",
+  "name": "未命名项目",
+  "settings": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "sample_rate": 48000,
+    "channels": 2,
+    "background": "#000000"
+  },
+  "tracks": [
+    {
+      "id": "trk_vcae076",
+      "type": "video",
+      "name": "V2",
+      "index": 0,
+      "clips": [],
+      "locked": false,
+      "muted": false,
+      "hidden": false,
+      "height": 64
+    },
+    {
+      "id": "trk_v562b1f",
+      "type": "video",
+      "name": "V1",
+      "index": 1,
+      "clips": [
+        "clip_4529f5f43695"
+      ],
+      "locked": false,
+      "muted": false,
+      "hidden": false,
+      "height": 64
+    },
+    {
+      "id": "trk_ef41a77",
+      "type": "effect",
+      "name": "FX1",
+      "index": 2,
+      "clips": [],
+      "locked": false,
+      "muted": false,
+      "hidden": false,
+      "height": 64
+    },
+    {
+      "id": "trk_af8377f",
+      "type": "audio",
+      "name": "A1",
+      "index": 3,
+      "clips": [
+        "clip_0ef63123cc14"
+      ],
+      "locked": false,
+      "muted": false,
+      "hidden": false,
+      "height": 64
+    }
+  ],
+  "markers": [],
+  "playhead": 0.0,
+  "shared_playhead": false,
+  "meta": {
+    "created": 1795610837.5085375,
+    "updated": 1795618654.9335158,
+    "author": "ui",
+    "description": ""
+  },
+  "rev": 144,
+  "subtitles": []
+}

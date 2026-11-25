@@ -1,0 +1,28 @@
+{
+  "host": "127.0.0.1",
+  "port": 5173,
+  "debug": false,
+  "media_roots": [
+    "D:/",
+    "C:/Users"
+  ],
+  "cache_dir": "data/cache",
+  "history_limit": 200,
+  "snapshot_interval_sec": 300,
+  "proxy": {
+    "enabled": true,
+    "max_height": 720,
+    "crf": 28,
+    "preset": "veryfast",
+    "threshold_mb": 40
+  },
+  "default_project": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "sample_rate": 48000,
+    "channels": 2,
+    "background": "#000000"
+  },
+  "media_trust_all": true
+}

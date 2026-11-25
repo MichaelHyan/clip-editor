@@ -1,0 +1,21 @@
+{
+  "ok": true,
+  "path": "D:/bgm/All My People.mp3",
+  "name": "All My People.mp3",
+  "kind": "audio",
+  "fingerprint": "f041d9490d218bb4",
+  "size": 2418250,
+  "duration": 201.456327,
+  "bitrate": 96030,
+  "format": "mp3",
+  "has_video": false,
+  "has_audio": true,
+  "width": 0,
+  "height": 0,
+  "fps": 0.0,
+  "video_codec": null,
+  "pix_fmt": null,
+  "sample_rate": 44100,
+  "channels": 2,
+  "audio_codec": "mp3"
+}

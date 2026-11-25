@@ -1,0 +1,23 @@
+{
+  "ok": true,
+  "path": "D:/bgm/BeMax - Ahegao.mp3",
+  "name": "BeMax - Ahegao.mp3",
+  "kind": "audio",
+  "fingerprint": "734b3a4e5f3ed642",
+  "size": 2690954,
+  "duration": 112.059501,
+  "bitrate": 192108,
+  "format": "mp3",
+  "has_video": false,
+  "has_audio": true,
+  "width": 0,
+  "height": 0,
+  "fps": 0.0,
+  "video_codec": null,
+  "pix_fmt": null,
+  "sample_rate": 44100,
+  "channels": 2,
+  "audio_codec": "mp3",
+  "browser_ok": true,
+  "browser_issues": []
+}

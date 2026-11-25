@@ -1,0 +1,364 @@
+{
+  "tag": "manual",
+  "taken": 1795613650.9352138,
+  "project": {
+    "id": "proj_00c13582b005",
+    "name": "未命名项目",
+    "settings": {
+      "width": 1920,
+      "height": 1080,
+      "fps": 60,
+      "sample_rate": 48000,
+      "channels": 2,
+      "background": "#000000"
+    },
+    "tracks": [
+      {
+        "id": "trk_vcae076",
+        "type": "video",
+        "name": "V2",
+        "index": 0,
+        "clips": [],
+        "locked": false,
+        "muted": false,
+        "hidden": false,
+        "height": 64
+      },
+      {
+        "id": "trk_v562b1f",
+        "type": "video",
+        "name": "V1",
+        "index": 1,
+        "clips": [
+          "clip_55a46b68a074"
+        ],
+        "locked": false,
+        "muted": false,
+        "hidden": false,
+        "height": 64
+      },
+      {
+        "id": "trk_ef41a77",
+        "type": "effect",
+        "name": "FX1",
+        "index": 2,
+        "clips": [],
+        "locked": false,
+        "muted": false,
+        "hidden": false,
+        "height": 64
+      },
+      {
+        "id": "trk_af8377f",
+        "type": "audio",
+        "name": "A1",
+        "index": 3,
+        "clips": [
+          "clip_c5e933380c0b"
+        ],
+        "locked": false,
+        "muted": false,
+        "hidden": false,
+        "height": 64
+      }
+    ],
+    "markers": [],
+    "playhead": 0.0,
+    "shared_playhead": false,
+    "meta": {
+      "created": 1795610837.5085375,
+      "updated": 1795613588.81612,
+      "author": "ui",
+      "description": ""
+    },
+    "rev": 61
+  },
+  "clips": {
+    "clip_55a46b68a074": {
+      "id": "clip_55a46b68a074",
+      "name": "van暗黑配音.mp4",
+      "media": {
+        "path": "D:/bgm/鬼畜、音效/van暗黑配音.mp4",
+        "kind": "video",
+        "probe": {
+          "ok": true,
+          "path": "D:/bgm/鬼畜、音效/van暗黑配音.mp4",
+          "name": "van暗黑配音.mp4",
+          "kind": "video",
+          "fingerprint": "256037278b6cdb0a",
+          "size": 16968945,
+          "duration": 90.906122,
+          "bitrate": 1493315,
+          "format": "mov,mp4,m4a,3gp,3g2,mj2",
+          "has_video": true,
+          "has_audio": true,
+          "width": 852,
+          "height": 480,
+          "fps": 30.0,
+          "video_codec": "h264",
+          "pix_fmt": "yuv420p",
+          "sample_rate": 44100,
+          "channels": 2,
+          "audio_codec": "aac",
+          "browser_ok": true,
+          "browser_issues": []
+        }
+      },
+      "timeline": {
+        "track_id": "trk_v562b1f",
+        "start": 0,
+        "duration": 90.906122,
+        "z": 0
+      },
+      "video": {
+        "enabled": true,
+        "src_in": {
+          "static": 0.0
+        },
+        "src_out": {
+          "static": null
+        },
+        "speed": {
+          "static": 1.0
+        },
+        "scale": {
+          "static": 1.0
+        },
+        "pos_x": {
+          "static": 0.0
+        },
+        "pos_y": {
+          "static": 0.0
+        },
+        "rotation": {
+          "static": 0.0
+        },
+        "anchor_x": {
+          "static": 0.5
+        },
+        "anchor_y": {
+          "static": 0.5
+        },
+        "crop": {
+          "top": {
+            "static": 0.0
+          },
+          "bottom": {
+            "static": 0.0
+          },
+          "left": {
+            "static": 0.0
+          },
+          "right": {
+            "static": 0.0
+          }
+        },
+        "mirror_h": {
+          "static": false
+        },
+        "mirror_v": {
+          "static": false
+        },
+        "erode": {
+          "static": 0.0
+        },
+        "erode_softness": {
+          "static": 0.0
+        },
+        "opacity": {
+          "static": 1.0
+        },
+        "blend": "normal"
+      },
+      "audio": {
+        "enabled": false,
+        "src_in": {
+          "static": 0.0
+        },
+        "src_out": {
+          "static": null
+        },
+        "speed": {
+          "static": 1.0
+        },
+        "pitch": {
+          "static": 0.0
+        },
+        "gain": {
+          "static": 0.0
+        },
+        "fade_in": {
+          "static": 0.0
+        },
+        "fade_out": {
+          "static": 0.0
+        },
+        "pan": {
+          "static": 0.0
+        }
+      },
+      "effects": [],
+      "markers": [],
+      "meta": {
+        "created": 1795613384.159612,
+        "updated": 1795613590.8438327,
+        "author": "ui",
+        "tags": [],
+        "notes": ""
+      },
+      "rev": 5
+    },
+    "clip_c5e933380c0b": {
+      "id": "clip_c5e933380c0b",
+      "name": "van暗黑配音.mp4",
+      "media": {
+        "path": "D:/bgm/鬼畜、音效/van暗黑配音.mp4",
+        "kind": "audio",
+        "probe": {
+          "ok": true,
+          "path": "D:/bgm/鬼畜、音效/van暗黑配音.mp4",
+          "name": "van暗黑配音.mp4",
+          "kind": "video",
+          "fingerprint": "256037278b6cdb0a",
+          "size": 16968945,
+          "duration": 90.906122,
+          "bitrate": 1493315,
+          "format": "mov,mp4,m4a,3gp,3g2,mj2",
+          "has_video": true,
+          "has_audio": true,
+          "width": 852,
+          "height": 480,
+          "fps": 30.0,
+          "video_codec": "h264",
+          "pix_fmt": "yuv420p",
+          "sample_rate": 44100,
+          "channels": 2,
+          "audio_codec": "aac",
+          "browser_ok": true,
+          "browser_issues": []
+        }
+      },
+      "timeline": {
+        "track_id": "trk_af8377f",
+        "start": 0,
+        "duration": 90.906122,
+        "z": 0
+      },
+      "video": {
+        "enabled": false,
+        "src_in": {
+          "static": 0.0
+        },
+        "src_out": {
+          "static": null
+        },
+        "speed": {
+          "static": 1.0
+        },
+        "scale": {
+          "static": 1.0
+        },
+        "pos_x": {
+          "static": 0.0
+        },
+        "pos_y": {
+          "static": 0.0
+        },
+        "rotation": {
+          "static": 0.0
+        },
+        "anchor_x": {
+          "static": 0.5
+        },
+        "anchor_y": {
+          "static": 0.5
+        },
+        "crop": {
+          "top": {
+            "static": 0.0
+          },
+          "bottom": {
+            "static": 0.0
+          },
+          "left": {
+            "static": 0.0
+          },
+          "right": {
+            "static": 0.0
+          }
+        },
+        "mirror_h": {
+          "static": false
+        },
+        "mirror_v": {
+          "static": false
+        },
+        "erode": {
+          "static": 0.0
+        },
+        "erode_softness": {
+          "static": 0.0
+        },
+        "opacity": {
+          "static": 1.0
+        },
+        "blend": "normal"
+      },
+      "audio": {
+        "enabled": true,
+        "src_in": {
+          "static": 0.0
+        },
+        "src_out": {
+          "static": null
+        },
+        "speed": {
+          "static": 0.78
+        },
+        "pitch": {
+          "static": 11.7
+        },
+        "gain": {
+          "static": 5.4
+        },
+        "fade_in": {
+          "static": 0.0
+        },
+        "fade_out": {
+          "static": 0.0
+        },
+        "pan": {
+          "static": 0.0
+        }
+      },
+      "effects": [
+        {
+          "id": "fx_ad7cff2e",
+          "type": "audio_echo",
+          "enabled": true,
+          "params": {
+            "delay": {
+              "static": 140
+            },
+            "decay": {
+              "static": 0.83
+            }
+          },
+          "meta": {
+            "name": "回声",
+            "category": "audio"
+          }
+        }
+      ],
+      "markers": [],
+      "meta": {
+        "created": 1795613348.6339762,
+        "updated": 1795613469.0907469,
+        "author": "ui",
+        "tags": [],
+        "notes": ""
+      },
+      "rev": 357
+    }
+  }
+}

@@ -1,0 +1,167 @@
+{
+  "id": "clip_32eb010fc925",
+  "name": "开场镜头",
+  "media": {
+    "path": "D:/git/clip-editor/data/test_media/sample.mp4",
+    "kind": "video",
+    "probe": {
+      "ok": true,
+      "path": "D:/git/clip-editor/data/test_media/sample.mp4",
+      "name": "sample.mp4",
+      "kind": "video",
+      "fingerprint": "f7b3f453153ad928",
+      "size": 3647294,
+      "duration": 10.0,
+      "bitrate": 2917835,
+      "format": "mov,mp4,m4a,3gp,3g2,mj2",
+      "has_video": true,
+      "has_audio": true,
+      "width": 1280,
+      "height": 720,
+      "fps": 30.0,
+      "video_codec": "h264",
+      "pix_fmt": "yuv420p",
+      "sample_rate": 44100,
+      "channels": 1,
+      "audio_codec": "aac"
+    }
+  },
+  "timeline": {
+    "track_id": "trk_v0a2f98",
+    "start": 0.0,
+    "duration": 4.0,
+    "z": 0
+  },
+  "video": {
+    "enabled": true,
+    "src_in": {
+      "static": 0.0
+    },
+    "src_out": {
+      "static": null
+    },
+    "speed": {
+      "static": 1.0
+    },
+    "scale": {
+      "static": 1.2
+    },
+    "pos_x": {
+      "static": 100
+    },
+    "pos_y": {
+      "static": 0.0
+    },
+    "rotation": {
+      "static": 0.0
+    },
+    "anchor_x": {
+      "static": 0.5
+    },
+    "anchor_y": {
+      "static": 0.5
+    },
+    "crop": {
+      "top": {
+        "static": 0.0
+      },
+      "bottom": {
+        "static": 0.0
+      },
+      "left": {
+        "static": 0.1
+      },
+      "right": {
+        "static": 0.0
+      }
+    },
+    "mirror_h": {
+      "static": false
+    },
+    "mirror_v": {
+      "static": false
+    },
+    "erode": {
+      "static": 0.0
+    },
+    "erode_softness": {
+      "static": 0.0
+    },
+    "opacity": {
+      "static": 1.0
+    },
+    "blend": "normal"
+  },
+  "audio": {
+    "enabled": true,
+    "src_in": {
+      "static": 0.0
+    },
+    "src_out": {
+      "static": null
+    },
+    "speed": {
+      "static": 1.0
+    },
+    "pitch": {
+      "static": 0.0
+    },
+    "gain": {
+      "static": -6
+    },
+    "fade_in": {
+      "static": 0.0
+    },
+    "fade_out": {
+      "static": 0.0
+    },
+    "pan": {
+      "static": 0.0
+    }
+  },
+  "effects": [
+    {
+      "id": "fx_8ef4895a",
+      "type": "blur",
+      "enabled": true,
+      "params": {
+        "radius": {
+          "keys": [
+            {
+              "t": 0.0,
+              "v": 8.0,
+              "e": "linear"
+            },
+            {
+              "t": 1.0,
+              "v": 20,
+              "e": "linear"
+            }
+          ]
+        }
+      },
+      "meta": {
+        "name": "高斯模糊",
+        "category": "filter"
+      }
+    }
+  ],
+  "markers": [
+    {
+      "id": "mk_57bfae6f",
+      "t": 1.1,
+      "label": "点",
+      "color": "#ffcc00"
+    }
+  ],
+  "meta": {
+    "created": 1795609309.9580057,
+    "updated": 1795609310.0043676,
+    "author": "ui",
+    "tags": [],
+    "notes": "",
+    "library": true,
+    "saved": 1795609310.0380075
+  },
+  "rev": 3
+}

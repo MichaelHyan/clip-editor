@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>clip-editor</title>
+<link rel="stylesheet" href="/static/css/editor.css">
+</head>
+<body>
+<div id="app">
+
+  <div id="topbar">
+    <div class="brand">clip-editor<small>P2</small></div>
+    <div class="proj-switch" id="proj-switch">
+      <button class="proj-switch-btn" id="proj-switch-btn">
+        <span id="proj-name" title="点击切换项目，双击重命名">加载中…</span>
+        <span class="caret">▼</span>
+      </button>
+      <div class="proj-menu" id="proj-menu"></div>
+    </div>
+    <span id="proj-meta"></span>
+    <span class="spacer"></span>
+    <button class="btn icon" id="btn-undo" title="撤销 Ctrl+Z">↶</button>
+    <button class="btn icon" id="btn-redo" title="重做 Ctrl+Y">↷</button>
+    <button class="btn" id="btn-settings" title="项目设置（分辨率/帧率/格式）">设置</button>
+    <button class="btn" id="btn-snap" title="创建快照 Ctrl+S">快照</button>
+    <button class="btn" id="btn-import" title="导入素材 Ctrl+O">导入素材</button>
+    <button class="btn primary" id="btn-export" title="导出">导出</button>
+    <span class="status-item" id="status-rev">rev 0</span>
+    <span class="status-item ok" id="status-save">已保存</span>
+    <span class="status-dot" id="status-sync" title="实时同步"></span>
+  </div>
+
+  <div id="mid">
+
+    <div id="assets-panel">
+      <div class="assets-head">
+        <span class="assets-title">素材箱</span>
+        <span class="assets-count" id="assets-count">0</span>
+        <span class="spacer"></span>
+        <button class="assets-collapse" id="assets-collapse" title="折叠/展开">⟨</button>
+      </div>
+      <div class="assets-body" id="assets"></div>
+      <div class="assets-foot">
+        <button class="assets-add" id="assets-add">+ 导入素材</button>
+      </div>
+    </div>
+
+    <div id="preview-panel">
+      <div id="preview-wrap">
+        <canvas id="preview-canvas" width="1920" height="1080"></canvas>
+      </div>
+    </div>
+
+    <div id="inspector-panel">
+      <div id="inspector"></div>
+    </div>
+
+    <div id="timeline-panel">
+      <div id="timeline"></div>
+    </div>
+
+  </div>
+
+  <div id="transport">
+    <button class="btn icon" id="btn-home" title="回到开头 Home">⏮</button>
+    <button class="btn icon" id="btn-prev-frame" title="上一帧 ←">◄</button>
+    <button class="btn icon" id="btn-play" title="播放/暂停 空格">▶</button>
+    <button class="btn icon" id="btn-next-frame" title="下一帧 →">►</button>
+    <button class="btn icon" id="btn-end" title="跳到结尾 End">⏭</button>
+    <span class="tc" id="tc-cur">00:00:00.000</span>
+    <span class="tc dim">/</span>
+    <span class="tc dim" id="tc-total">00:00:00.000</span>
+    <div class="tc-bar"><div id="tc-fill"></div></div>
+    <span class="spacer"></span>
+    <span class="status-item">音量</span>
+    <input type="range" id="volume" min="0" max="1.5" step="0.01" value="1">
+  </div>
+
+</div>
+
+<script src="/static/vendor/socket.io.min.js"></script>
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>
+
+<!-- __EOF__ -->

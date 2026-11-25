@@ -1,0 +1,23 @@
+{
+  "ok": true,
+  "path": "D:/bgm/1/03dnymuvz4l (1).mp4",
+  "name": "03dnymuvz4l (1).mp4",
+  "kind": "video",
+  "fingerprint": "3fd8bbd3fa8be7bb",
+  "size": 11686249,
+  "duration": 53.233333,
+  "bitrate": 1756230,
+  "format": "mov,mp4,m4a,3gp,3g2,mj2",
+  "has_video": true,
+  "has_audio": true,
+  "width": 852,
+  "height": 480,
+  "fps": 30.0,
+  "video_codec": "h264",
+  "pix_fmt": "yuv420p",
+  "sample_rate": 48000,
+  "channels": 2,
+  "audio_codec": "aac",
+  "browser_ok": true,
+  "browser_issues": []
+}
