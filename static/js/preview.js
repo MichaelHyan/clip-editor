@@ -84,7 +84,14 @@ function watchProxy(path, cb) {
   proxyWaiters.get(path).push(cb);
 }
 
+// 转码策略：off 时绝不主动转码（默认），直接用源文件流播
+function proxyMode() {
+  const st = (state.project && state.project.settings) || {};
+  return st.proxy_mode || "off";
+}
+
 async function requestProxy(path) {
+  if (proxyMode() === "off") return;
   if (proxyBusy.has(path)) return;
   proxyBusy.add(path);
   bus.emit("proxy:busy", { path, busy: true });
@@ -125,7 +132,8 @@ function createVideoEl(path, entry) {
   v.preload = "auto";
   v.muted = true;
   v.playsInline = true;
-  v.src = mediaUrl(path, true);
+  // 取源跟设置走：off 直连源文件，auto/always 才带 proxy=1
+  v.src = mediaUrl(path, proxyMode() !== "off");
   entry.el = v;
   entry.ready = false;
   entry.failed = false;
@@ -140,7 +148,16 @@ function createVideoEl(path, entry) {
     entry.ready = false;
     if (entry.failed) return;      // 已处理过，避免死循环
     entry.failed = true;
-    // 解码失败：走代理。代理就绪后重载同一 URL
+    // 解码失败
+    if (proxyMode() === "off") {
+      // 用户选了「用源文件」：不转码，提示怎么处理
+      bus.emit("toast", {
+        msg: "此素材浏览器无法解码，请在设置里把「转码策略」改为「仅编码不兼容时」",
+        kind: "error",
+      });
+      return;
+    }
+    // 走代理。代理就绪后重载同一 URL
     watchProxy(path, () => {
       if (entry.el !== v) return;  // 期间已被替换
       entry.failed = false;        // 允许下一轮 error 再次触发
@@ -174,7 +191,7 @@ function getMediaEl(cid) {
   if (kind === "image") {
     const img = new Image();
     img.decoding = "async";
-    img.src = mediaUrl(path, true);
+    img.src = mediaUrl(path, false);
     entry.el = img;
     img.onload = () => {
       entry.ready = true;

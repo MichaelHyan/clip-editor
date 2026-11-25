@@ -75,7 +75,9 @@ def import_clip(pid: str) -> Any:
                   C.client_id())
         realtime.emit_clip(pid, clip, "create", C.client_id())
         realtime.emit_project_patch(pid, {"tracks": after_pj["tracks"]}, C.client_id())
-        if not info.get("browser_ok", True):
+        # 转码策略由项目设置决定，默认 off（用源文件，不自动转码）
+        _pm = str((ws.project.get("settings") or {}).get("proxy_mode") or "off")
+        if _pm == "always" or (_pm == "auto" and not info.get("browser_ok", True)):
             import threading as _threading
             def _warm(src=path):
                 try:

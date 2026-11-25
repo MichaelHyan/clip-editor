@@ -4,7 +4,7 @@
 
 - **项目根**：`D:/git/clip-editor`
 - **服务地址**：`http://127.0.0.1:5173`
-- **代码规模**：core+api 约 5600 行，前端 JS 约 5100 行，CSS 约 1400 行
+- **代码规模**：core 3840 + api 2188 = 6028 行，前端 JS 6343 行，CSS 1607 行，tools 4680 行（合计 18658 行 / 74 文件）
 
 ---
 
@@ -55,11 +55,96 @@
 Project（项目/时间轴）
 ├── settings: 分辨率 / 帧率 / 采样率 / 背景色
 ├── tracks[]: Track（轨道）
-│   ├── id / type(video|audio|effect|marker) / index / muted / hidden / locked
+│   ├── id / type(video|audio|subtitle|effect|marker) / index / muted / hidden / locked
 │   └── clips[]: 只存 clip_id 引用（顺序无关，渲染按 timeline.start 排）
+│                subtitle 轨不用 clips[]，字幕存 project.subtitles[]
+│                effect/marker 为历史遗留类型，新建项目不再产生
 ├── markers[]: 时间轴标记
 └── rev / playhead / shared_playhead
 ```
+
+### 轨道增删（时间轴 UI）
+
+`static/js/timeline.js`，后端复用已有的 `POST /tracks` / `DELETE /tracks/<tid>`。
+
+| 位置 | 操作 |
+|---|---|
+| 工具栏「+ 视频轨」 | 加一条 video 轨，**置于最上层**（`index: -1`） |
+| 工具栏「+ 音频轨」 | 加一条 audio 轨，**置于最下层**（`index: 9999`） |
+| 轨道头「×」 | 删除该轨道（带片段会二次确认，字幕轨不给按钮） |
+| 轨道名**双击** | 就地重命名（Enter 提交 / Esc 取消 / 失焦提交） |
+| 轨道行**按住拖动** | 调整轨道顺序（插入线指示落点，松手落盘） |
+| 轨道头「⇄」 | 切换 video ↔ audio（**仅空轨道**，字幕轨不给） |
+| 轨道头**下边缘拖动** | 调整轨道高度（28~240px，双击恢复 64px） |
+
+**命名规则**：`nextTrackName()` 取同类型轨道名末尾数字最大值 +1
+（V2/V1 → V3，A1 → A2）。
+
+**重命名的约束**：后端 `patch_track` 对 `name` 做 `strip()` 并截断到 40 字符，
+空名被忽略（保留原名）。前端 `startRenameTrack()` 在 `pointerdown` 上
+`stopPropagation()`，否则会同时触发整行的拖动排序。
+
+**拖动排序的实现要点**：
+
+- 用**插入线**（`.tl-head-insert`）指示落点，不做行位移动画。行高受
+  `.tl-heads-inner` 的 `translateY(-scrollTop)` 影响，位移动画容易错位；
+  插入线只需把指针 Y 和各行的 mid Y 比较，稳。
+- 落点计算：`order.indexOf(tid)` 得到 `from`，插入线给的是「插到第 idx 位
+  之前」，**移除自身后若目标在其后要左移一位**（`if (to > from) to -= 1`）。
+  这一步忘掉就会差一位。
+- `render()` 开头 `if (drag || headDrag) return`，拖拽期间禁止重建节点。
+- `onHeadDown` 里排除 `button` 和 `input`，否则点按钮会启动拖动。
+
+**轨道高度的实现要点**：
+
+- 把手 `.tl-head-resize` 绝对定位在 `.tl-head` 内部（`bottom: 0`，高 5px）。
+  **不能用 `bottom: -3px`**：`.tl-head` 是 `overflow: hidden`，负偏移会被裁掉
+- 拖动中直接改 `row.style.height` 和 `lane.style.height`，并乐观写
+  `tr.height`（让 `positionPlayhead()` 的 `laneTotalHeight()` 跟上），
+  松手才 `patchTrack` 落盘，失败时 `render()` 还原
+- `render()` 守卫要同时拦 `drag || headDrag || headResize`
+- `onHeadResizeDown` 里 `ev.stopPropagation()`，否则会触发整行的拖动排序
+- ⚠️ **`onHeadResizeUp` 在 `!moved` 分支里绝不能 `render()`**：
+  双击 = down/up + down/up + dblclick，第一次 up 就重建节点会让后续
+  `dblclick` 在已游离的旧节点上触发，监听器随之消失 → 双击恢复失效。
+  这个坑实测才暴露（14/16 时双击恢复失败）。
+
+**类型切换的三重约束**：
+
+1. 仅 `video ↔ audio` 可互转。`subtitle` / `effect` / `marker` 不给按钮
+2. **必须空轨道**。轨道上有片段时改类型会让片段语义与轨道不匹配
+   （video 轨上挂 audio clip 等），前后端都拦
+3. 切换后按新类型自动重命名（`nextTrackName(next)`，如 V1 → A2）
+
+后端 `patch_track` 对 `type` 的校验：
+
+```python
+elif k == "type":
+    t = str(v or "")
+    if t not in project_mod.TRACK_TYPES:
+        return C.err("非法轨道类型: " + t, 400)
+    if t != tr.get("type") and (tr.get("clips") or []):
+        return C.err("轨道上还有 %d 个片段，不能改类型" % len(tr["clips"]), 400)
+    tr[k] = t
+```
+
+注意 `t != tr.get("type")` 这个判断：**同类型 patch 不算改类型**，不拦。
+否则前端整行提交时带上不变的 type 也会被拒。
+
+⚠️ **index 语义的坑**：后端 `add_track` 是
+
+```python
+p["tracks"].append(tr)
+p["tracks"].sort(key=lambda t: t.get("index", 0))   # 稳定排序
+for i, t in enumerate(...): t["index"] = i           # 重编号
+```
+
+新轨道 append 到末尾后按 index **稳定排序**再重编号。所以传 `index=0` 时，
+原有那条 index=0 的轨（V2）会排在前面，新轨只能排第二。**要让视频轨真正
+置顶必须传负数**（`-1`），音频轨传大数（`9999`）落到底部。
+
+**字幕轨不提供删除按钮**：`normalize()` 会在下次读盘时自动补一条 SUB 轨
+（`_ensure_subtitle_track()`），删了只会让人困惑，字幕数据也不会丢。
 
 ### 字幕（独立于 clip 体系）
 
@@ -283,6 +368,26 @@ WSOLA 参数（`audio_process.js`）：
 
 缓存键 `cid|speed|pitch`。**代价**：首次应用某组合有几百毫秒 CPU 延迟，之后走缓存。
 
+### 三层缓存
+
+| 层 | 存储 | 存活 | 内容 | 体积参考（925s 双声道 48k） |
+|---|---|---|---|---|
+| `bufferCache` | 内存 Map | 页面 | AudioBuffer（PCM） | ~355 MB |
+| `processedCache` | 内存 Map | 页面 | WSOLA 后的 AudioBuffer | 同上 |
+| `audioCache` | **IndexedDB** | 浏览器 | **压缩字节（.m4a）** | **~36 MB** |
+
+**只持久化压缩形式**。PCM 是压缩格式的 10 倍，塞进 IndexedDB 既撑配额又
+没收益 —— 解码本身 1~3 秒，重下载才是瓶颈。
+
+`static/js/audio_cache.js` 的键用 `probe.fingerprint` 优先（源被替换自动失效），
+`path:size:kind` 兜底。单条上限 256 MB，总量上限 1 GB，超了按 `saved` 从旧删。
+
+⚠️ **`decodeAudioData` 会 detach 传入的 ArrayBuffer**，写缓存必须 `raw.slice(0)`
+先复制；且复制前判 `byteLength <= MAX_ENTRY_BYTES`，否则源文件 fallback（4 GB）
+时复制一次就是灾难。缓存解码失败要 `remove` 掉坏条目再走下载分支，不能永久失声。
+
+调试：`window.__audioDebug.audioCacheStats()` / `clearAudioCache()`。
+
 ⚠️ 预览用简化 WSOLA，音质不如专业算法。**导出端用 ffmpeg `rubberband`** 才是高质量变调。
 
 ### 播放调度
@@ -367,7 +472,11 @@ parts.append(f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{alpha}'")
 | 时间轴 SUB 轨 | 字幕块渲染，可拖动改时间、拖两边改时长、双击进编辑 |
 | SUB 轨头 `+` 按钮 | 在播放头处加一条字幕（默认 3 秒） |
 | 检查器 | 选中字幕时切换为字幕编辑页：内容/时间/样式/对齐/删除 |
+| 时间轴选中字幕块后按 `Delete`/`Backspace` | 直接删除该字幕 |
 | 预览画布 | 按播放头实时叠字 |
+
+顶栏「字幕」按钮是**不依赖轨道类型**的兜底入口：在播放头处加一条字幕并
+自动选中，随后在右侧检查器编辑内容。
 
 ### 接口
 
@@ -400,9 +509,22 @@ x/y 0~1，align 三选一）。
 | 帧率 | 1~240 fps | 导出编码帧率、关键帧对齐 |
 | 采样率 | 8k/44.1k/48k/96k | 导出音频采样率 |
 | 背景色 | 任意 | 画布底色（缩放留黑边时的边） |
+| 转码策略 | off/auto/always | 是否把源转成 H.264 代理，见下 |
 
 **后端校验**：`routes_project.py` 的 `_validate_settings()` 在
 `PATCH /projects/<pid>` 前做范围检查，越界返回 400 并带具体数值。
+枚举项（`proxy_mode`）另由 `_SETTINGS_ENUMS` 校验，非法值 400。
+
+**转码策略 `settings.proxy_mode`**（默认 `off`）：
+
+| 值 | 行为 |
+|---|---|
+| `off` | 用源文件流播，从不自动转码。**默认**，最快、不占 CPU |
+| `auto` | 仅当编码浏览器不支持（`browser_ok=false`，如 hevc/mpeg4/wmv3）才转码 |
+| `always` | 总是转码，大文件也转（慢） |
+
+导入/素材上轨的自动预热、预览解码失败后的兜底转码，全部按此设置判定。
+`off` 模式下解码失败只弹提示，不会静默起 ffmpeg。
 
 **改动即时生效**：`project:changed` 事件触发前端 `fitPreview()` 重算画布，
 不需要刷新页面。已有片段按新画布**等比缩放留黑边**（`export.py` 的 fit 缩放），
@@ -466,8 +588,24 @@ x/y 0~1，align 三选一）。
 浏览器只认 `h264/vp8/vp9/av1` + `aac/mp3/opus/vorbis/flac`。
 
 - `probe()` 返回 `browser_ok` / `browser_issues`
-- 不兼容时导入**无视体积阈值强制转码代理**（`data/cache/proxy/*.mp4`）
-- 代理强制**短 GOP**（`-g fps -keyint_min fps -sc_threshold 0`），否则拖动播放头大面积黑屏
+- 是否转码由项目设置 `settings.proxy_mode` 决定（默认 `off` 用源文件）
+- 转码产物写 `data/cache/proxy/<fp>.mp4`，**短 GOP**
+  （`-g fps -keyint_min fps -sc_threshold 0`），否则拖动播放头大面积黑屏
+
+**代理安全的四条铁律**（`core/media.py`）：
+
+1. **先写 `.part.mp4`，成功后 `os.replace` 原子改名**。`-movflags +faststart`
+   要等转码结束才回填 moov atom，转码中的文件不是有效 mp4
+2. **`proxy_state()` 只认「主文件 + `.meta`」同时存在**。只看 `os.path.isfile()`
+   会把半成品当可用代理 —— 曾经因此黑屏 + 无声
+3. **`.lock` 文件锁**（`O_EXCL` 创建，2h 过期）。否则重启后孤儿 ffmpeg 和新进程
+   会同时写同一个输出文件，把文件彻底写坏
+4. **代理未就绪时 `/stream?proxy=1` 回退源文件**，绝不喂半成品给 `<video>`
+
+**大文件音频专用代理**：`ensure_audio_proxy()` 用 `-vn` 只抽音轨成 `.m4a`
+（源是 aac/mp3 时直接 `-c:a copy`，4GB 视频 0.3 秒出 36MB 音频）。
+音频解码走这个文件，不必等整段视频转完，也不必下载 4GB 源。
+接口：`POST /api/media/audio-proxy {path}`、`GET /stream?proxy=1&audio=1`。
 
 **排查黑屏顺序**：
 1. `GET /api/media/playable?path=` → `browser_ok: false` 就是编码问题
@@ -629,6 +767,195 @@ FX1（effect 轨）实际没用上，改为 SUB1 字幕轨。字幕独立存
 - 预览：按播放头实时叠字，字号按画布宽度归一化
 - 导出：支持 SRT 侧载文件（**烧录进视频尚未实现**）
 
+### 9. 字幕入口不可见
+
+**现象**：老项目主界面完全看不到字幕创建入口，`project.subtitles` 永远是 `[]`。
+
+**根因**：字幕入口只挂在 `type == "subtitle"` 的轨道上（时间轴 SUB 轨头的「+」、
+字幕块渲染），而老项目那条轨是早期 `effect` 类型的 FX1 占位轨。`make_project()`
+新建项目建 SUB1，但 `normalize()` 不补，老项目就没有 subtitle 轨。
+
+**修复**：
+
+- `normalize()` 加幂等迁移 `_ensure_subtitle_track()`：优先把**空的 effect 轨
+  就地改型**为 SUB1（保留 `track_id`，避免历史引用失效），否则在最后一条
+  video 轨后插一条
+- 顶栏加**永远可见**的「字幕」按钮（`#btn-subtitle`），不依赖轨道类型
+- `selectClip()` 清 `selectedSubtitleId`，避免检查器卡在字幕编辑页
+
+**教训**：结构性入口不能绑死在一个可变的、会被历史数据污染的状态上。
+`normalize()` 是所有读写路径的必经之地，是最合适的幂等迁移点。
+
+### 10. 大视频不播放 / 无声
+
+**现象**：4GB 的 1920×992@59.94 h264+aac 视频导入后，画面黑屏、音频无声。
+
+**根因**（四重叠加）：
+
+- 体积超 40MB 阈值触发视频代理转码，但要转 925 秒 1080p（几十分钟）
+- `proxy_state()` 只看文件存在就判定 `ready`，把**转码中的半成品**喂给前端。
+  `-movflags +faststart` 要等转码结束才回填 moov，半成品不是有效 mp4
+- 重启后旧进程的 ffmpeg 变孤儿，新进程 `_PROXY_JOBS` 为空又起一份，
+  **两个 ffmpeg 抢写同一个文件** → 文件彻底写坏
+- 音频走 `fetch(mediaUrl(path,true))` 下载整个 4GB 代理再 `decodeAudioData`，
+  内存峰值约 700MB，且拿到的还是半成品
+
+**修复**：
+
+- 代理写 `.part.mp4` → 成功才 `os.replace` 原子改名
+- `proxy_state()` 必须「主文件 + `.meta`」同时存在才算 ready
+- `.lock` 文件锁防跨进程重复转码
+- 新增 `ensure_audio_proxy()`：`-vn` 抽音轨，aac 源直接 copy（0.3s 出 36MB）
+- `/stream?proxy=1` 代理未就绪回退源文件
+- **转码策略进项目设置 `proxy_mode`，默认 `off` 用源文件**
+
+**验证**：源文件 moov 在头部（faststart 布局），Range 请求返回 206，
+浏览器可边下边播；音频代理 36.9MB / 0.3s；`/stream` 三条路径
+（源 / 视频代理 / 音频代理）的 Content-Type 与长度均正确。
+
+### 11. 字幕无法用回格删除
+
+**现象**：时间轴上选中字幕块，按 `Delete`/`Backspace` 无反应，只能去检查器
+点「删除此字幕」。
+
+**根因**：`main.js` 的 `deleteSelected()` 只读 `state.selectedClipId`，读到空就
+`return`。字幕存在 `project.subtitles[]`，选中状态是独立的 `selectedSubtitleId`，
+不在 clip 体系里，所以永远走不到删除。
+
+**修复**：`deleteSelected()` 改为**字幕优先**分派：
+
+```js
+if (state.selectedSubtitleId) → subtitles.removeSubtitle(sid)
+else if (state.selectedClipId) → api.delClip(cid)
+```
+
+**教训**：「删除」是全局动词，作用对象由选中状态决定。新增可选中对象
+（标记、轨道）时这里要同步扩展，别只覆盖一种。
+
+### 12. 音频每次刷新都重新下载
+
+**现象**：刷新页面后播放，音频都要重新拉一遍（音频代理 36 MB），源 fallback
+时可能拉数 GB。
+
+**根因**：`bufferCache` / `processedCache` 都是内存 Map，刷新即丢。
+
+**修复**：新增 `static/js/audio_cache.js`，用 IndexedDB 缓存**压缩字节**
+（音频代理 `.m4a`，约 36 MB），命中后省掉网络下载，只花 1~3 秒
+`decodeAudioData`。键用 `probe.fingerprint`，源被替换自动失效。
+
+**验证**（`tools/browser_verify_sub_audio.py`，Playwright + 系统 Edge）：
+17/17 通过，覆盖字幕新增→选中→Delete/Backspace 删除全链路、IndexedDB
+`put/get/remove/stats` 与缓存键格式，控制台无错误。
+
+### 13. 轨道无法自由增删
+
+**现象**：只能使用新建项目时的默认 4 条轨（V2/V1/SUB1/A1），无法加轨。
+
+**根因**：后端 `POST /tracks`、`DELETE /tracks/<tid>` 和 `api.js` 封装
+早就齐备，**缺的只是时间轴上的 UI 入口**。
+
+**修复**：工具栏加「+ 视频轨」「+ 音频轨」，轨道头加「×」。
+`HEAD_W` 148 → 172，容纳 4 个按钮不挤掉轨道名。
+
+详见「轨道增删（时间轴 UI）」章节，尤其 index 语义那个坑。
+
+### 14. 删除轨道后撤销无法恢复片段
+
+**现象**：删除一条带片段的轨道，按 Ctrl+Z 后轨道回来了，但片段永远消失。
+
+**根因**：`delete_track` 先 `ws.drop_clip(cid)` 把片段文件从磁盘删了，
+但 `ws.commit()` 的 undo 列表**只记了 project 状态**：
+
+```python
+for cid in list(tr.get("clips") or []):
+    ws.drop_clip(cid)                      # 片段文件已删
+ws.commit("删除轨道",
+          [{"target": "project", "state": before}],   # 只记 project
+          ...)
+```
+
+撤销时 `apply_states` 只恢复 project，轨道回来了但 `clip_id` 指向已删除的
+文件 → 前端 `clip(cid)` 返回 null → 轨道显示为空。**删轨道永久不可逆。**
+
+**修复**：drop 之前先把每个片段的完整快照塞进 undo 列表，redo 里对应
+`state: None`，并逐个 `emit_clip_removed` 让其他客户端同步：
+
+```python
+undo_states = [{"target": "project", "state": before}]
+redo_states = []
+for cid in clip_ids:
+    c = ws.clips.get(cid)
+    if c is not None:
+        undo_states.append({"target": "clip", "id": cid,
+                            "state": copy.deepcopy(c)})
+    redo_states.append({"target": "clip", "id": cid, "state": None})
+    ws.drop_clip(cid)
+```
+
+**教训**：任何「先删数据、后记录撤销」的操作都是错的。撤销快照必须在
+**破坏性动作之前**采集。验证脚本 `tools/verify_delete_track_undo.py`
+专测这条链路（9/9 通过）。
+
+### 15. 浏览器测试破坏真实数据
+
+**现象**：`browser_verify_track_ui.py` 直接在 `proj_00c13582b005` 上跑，
+删掉了用户的 V1 轨和视频片段。
+
+**根因**：测试脚本读 `localStorage` 里的项目，即用户当时正在编辑的那个。
+破坏性测试（删轨、删片段）直接作用在线上数据上。
+
+**修复**：测试自己 `POST /projects` 建临时项目，`goto('/?p=<temp_pid>')`
+显式指定，二次校验 `state.pid === temp_pid` 不一致就中止，结束时
+`DELETE` 掉。全程不碰现有项目。
+
+**教训**：**任何破坏性自动化测试都必须自带隔离环境**。临时项目、临时
+目录、临时端口都行，就是不能用「用户当前正在用的」。
+
+### 16. 轨道重命名 / 拖动排序 / 类型切换
+
+**现象**：轨道只能增删，不能改名、不能调顺序、不能换类型。
+
+**根因**：后端 `PATCH /tracks/<tid>`（支持 `name`/`type`/`index`）和
+`POST /tracks/reorder` 早就齐备，`api.js` 缺 `patchTrack` 封装，
+前端零入口。
+
+**修复**：
+
+- `api.js` 加 `patchTrack(pid, tid, patch)`
+- 轨道名双击 → 就地 `input`，Enter/Esc/失焦三态
+- 轨道行按住拖动 → 插入线指示，落盘走 `POST /tracks/reorder`
+- 轨道头加「⇄」按钮 → `video ↔ audio`，仅空轨可用
+- `HEAD_W` 172 → 196，容纳 5 个按钮（M/H/L/⇄/×）
+- 后端 `patch_track` 补 `type` 合法性校验 + 空轨校验 + `name` 截断
+
+**详见**「轨道增删（时间轴 UI）」章节的「重命名/拖动/类型切换」小节。
+
+**验证**：`tools/verify_track_rename_reorder_type.py`（新增，API + 浏览器
+两段，全程临时项目）**23/23 通过**，覆盖重命名（空名/超长/Esc）、类型切换
+（空轨可改/非空被拒/非法类型 400/同类型不拒）、排序（生效/index 连续/
+不完整 order 不丢轨/指定轨排第一）、拖动真实鼠标轨迹、控制台无错误。
+
+### 17. 轨道高度不可调
+
+**现象**：轨道行高固定 64px，片段密集时看不清。
+
+**根因**：后端 `patch_track` 早就支持 `height`（钳制 28~240），轨道头和
+lane 也都按 `tr.height` 渲染，**缺的只是拖拽把手**。
+
+**修复**：每行底部加 `.tl-head-resize`（5px 高，`cursor: ns-resize`），
+拖动改高度，双击恢复 64px。
+
+**踩到的坑**：双击恢复一开始失效。`onHeadResizeUp` 在「没移动」分支里
+也调了 `render()`，而双击是 down/up + down/up + dblclick —— 第一次 up
+就重建节点，后续 dblclick 落在已游离的旧节点上，监听器已消失。
+修复：`!moved` 时只清理，不重建（没移动本来就什么都没变）。
+
+**验证**：`tools/verify_track_height.py`（新增）**16/16 通过**，覆盖把手
+存在、向下/向上拖动、lane 同步、落盘与刷新持久、28/240 极值钳制、
+双击恢复、拖动把手不误触发排序、控制台无错误。
+
+---
+
 ## 十一、当前已知问题
 
 | 项 | 状态 | 说明 |
@@ -640,29 +967,69 @@ FX1（effect 轨）实际没用上，改为 SUB1 字幕轨。字幕独立存
 | 字幕不烧录进视频 | **待实现** | 目前只导出 SRT 侧载。烧录需 `subtitles`/`ass` 滤镜 + 字体路径，下一轮补 |
 | 字幕无法跨项目复用 | 未实现 | 字幕存在项目级 `subtitles[]`，没有像 clip 那样的片段库 |
 | WSOLA 音质 | 固有限制 | 简化实现，导出端用 rubberband 更佳 |
+| 字幕轨被手工删除 | 自动恢复 | 删掉 SUB1 后，下次读盘 `normalize()` 会重新补一条（字幕数据不丢，只是轨道重建） |
+| 音频缓存无 UI 展示 | 未实现 | `audio_cache.stats()` 已就绪，设置对话框还没做「音频缓存 X MB / 清空」入口，目前只能用 `window.__audioDebug` |
+| 缓存失效只看指纹 | 可接受 | 「源 mtime 变了但大小和指纹都没变」的极端情况会命中旧缓存，不影响正确性 |
+| 长音频仍全量解码 | 待优化 | 唯一会在真实大文件上出问题的一项。>600s 音频全量解码进内存约 355 MB（切片翻倍约 700 MB），`LONG_THRESHOLD=600` 已定义但未启用。IndexedDB 缓存只解决「网络慢」，没解决「内存大」。彻底解法：>600s 且 speed=1/pitch=0 时走 `<audio>` + `MediaElementSource` 流式播放（代价：该片段无法 WSOLA 变调） |
+| 拖动排序无动画 | 设计如此 | 用插入线而非行位移。行高受 `translateY(-scrollTop)` 影响，位移动画容易错位 |
+| 撤销栈是进程内存 | 固有限制 | `_STACKS` 在 `core/history.py` 里是模块级字典，重启服务清空。持久化需要序列化整个状态快照，暂不做 |
+| 删除轨道不自动补默认轨 | 设计如此 | 允许删到零视频轨，此时导入片段会报「项目中无可用轨道，请先创建轨道」 |
 
 ---
 
 ## 十二、验证工具
 
 ```
-tools/
-├── launch.py               分离进程启动（自动清端口占用）
-├── stat.py                 代码规模统计
-├── browser_check.py        页面加载检查
-├── browser_interact.py     交互链路（选中/改参/播放/关键帧/撤销）
-├── browser_agent_live.py   agent 注册工具实时闭环
-├── browser_export.py       导出 UI 全流程
-├── browser_preview_pixel.py 像素级画面验证
-├── verify_*.py             各改动模块的 API 级验证
-└── diag_*.py               故障诊断（拖拽/渲染/导出/顶栏）
+tools/                                共 32 个脚本
+├── launch.py                         分离进程启动（自动清端口占用）
+├── stat.py                           代码规模统计
+├── cleanup_patches.py                清理一次性补丁脚本
+├──
+├── 【基础设施验证】
+├── browser_check.py                  页面加载检查 / 控制台错误
+├── browser_interact.py               交互链路（选中/改参/播放/关键帧/撤销）
+├── browser_agent_live.py             agent 注册工具实时闭环
+├── browser_export.py                 导出 UI 全流程
+├── browser_preview_pixel.py          像素级画面验证
+├──
+├── 【本轮新增的模块验证】
+├── verify_track_rename_reorder_type.py  重命名/排序/类型切换（API+浏览器，23 项）
+├── verify_track_height.py               轨道高度调整（浏览器，16 项）
+├── verify_delete_track_undo.py          删轨撤销完整性（API，9 项）
+├── browser_verify_track_ui.py           轨道增删 UI（浏览器，23 项）
+├── browser_verify_sub_audio.py          字幕删除 + 音频缓存（浏览器，17 项）
+├──
+├── 【早期模块验证】
+├── verify_assets / audio_live / batch4 / cross_track / export_fit
+├── verify_fix5 / fix6 / fixes3 / pitch_crop / render / split_sync
+└── diag_*.py                          故障诊断（拖拽/渲染/导出/顶栏/素材/seek）
 ```
 
 浏览器测试复用系统 Edge（`C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe`），Playwright 通过 `executable_path` 复用，不下载内核。
 
+### ⚠️ 破坏性测试必须用临时项目
+
+所有会删数据的浏览器测试（删轨道、删片段、改类型）**必须自建临时项目**：
+
+```python
+pid = http("POST", API + "/projects", {"name": "__test__"})["data"]["project"]["id"]
+try:
+    page.goto(BASE + "/?p=" + pid)        # 显式指定，不读 localStorage
+    cur = page.evaluate("...state.pid...")
+    if cur != pid:
+        raise RuntimeError("项目上下文不对，中止以防破坏真实数据")
+    ...                                     # 破坏性操作
+finally:
+    http("DELETE", API + "/projects/" + pid)
+```
+
+**教训来源**：早期 `browser_verify_track_ui.py` 读 `localStorage`，直接跑在用户正在编辑的项目上，删掉了真实的 V1 轨道和视频片段。
+
 ---
 
 ## 变更历史
+
+### 早期
 
 - **初始版本**：P1 后端 + P2 前端 + P3 导出全部落地
 - **素材箱**：导入改为登记 + 拖拽上轨，视频源自动拆成视频卡/音频卡
@@ -670,5 +1037,40 @@ tools/
 - **导出修复**：build 幂等、源等比铺满、擦除 geq 实现
 - **拖拽修复**：纵向位移判定、render 守卫、坐标匹配 lane、轨道归属同步
 - **UI 完善**：片段改名、多工程切换、素材移除、缩放范围放宽、擦除方向
+
+### 本轮（字幕 / 代理 / 轨道三条线）
+
+**字幕线**
+- SUB1 轨从 `effect`（FX1 占位）就地迁移，`normalize()` 幂等保证
+- 顶栏加「字幕」按钮，不依赖轨道类型
+- 选中字幕块按 `Delete`/`Backspace` 直接删除
+
+**代理 / 大文件线**
+- 代理改为 `.part.mp4` + `os.replace` 原子写，半成品永不暴露
+- `proxy_state()` 必须「主文件 + `.meta`」同时存在才算就绪
+- `.lock` 文件锁防跨进程重复转码（孤儿 ffmpeg 曾把文件写坏）
+- 新增 `ensure_audio_proxy()`：`-vn` 只抽音轨，4GB 源 0.3 秒出 36MB
+- 转码策略进项目设置 `proxy_mode`（off/auto/always），**默认 off 用源文件**
+- `/stream?proxy=1` 代理未就绪回退源文件
+
+**音频缓存线**
+- 新增 `static/js/audio_cache.js`：IndexedDB 缓存压缩字节（36MB 而非 355MB PCM）
+- 键用 `probe.fingerprint`，源被替换自动失效
+- ⚠️ `decodeAudioData` 会 detach 传入 buffer，写缓存必须 `raw.slice(0)`
+
+**轨道线**
+- 工具栏「+ 视频轨 / + 音频轨」，轨道头「×」删除
+- 轨道名双击重命名、整行拖动排序（插入线指示）、「⇄」切换 video↔audio（仅空轨）
+- 轨道下边缘拖动调高度（28~240px，双击恢复 64px）
+- 修 `delete_track` 撤销不完整（undo 里补 clip 快照，否则删轨永久不可逆）
+- 修浏览器测试破坏真实数据（改自建临时项目）
+
+### 已知待办（按优先级）
+
+1. **长音频流式播放** —— 唯一会在真实大文件上出问题的项
+2. **字幕烧录进视频** —— 目前只导出 SRT 侧载
+3. 导出关键帧保真（缩放/裁剪/透明度等取片段起点值）
+4. 音频缓存 UI（`stats()` 已就绪，缺设置面板入口）
+5. 轨道类型杂项（重命名/排序/高度已做，剩「全局默认轨道高度」）
 
 <!-- __EOF__ -->

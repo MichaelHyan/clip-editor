@@ -274,7 +274,7 @@ function build() {
   const c = selectedClip();
   if (!c) {
     root.appendChild(el("div", { class: "insp-empty" },
-      "未选中片段\n在时间轴上点选一个片段以编辑属性\n\n要加字幕：点 SUB 轨旁的「+ 字幕」"));
+      "未选中片段\n在时间轴上点选一个片段以编辑属性\n\n要加字幕：点顶栏「字幕」按钮，或 SUB 轨头的「+」"));
     return;
   }
 

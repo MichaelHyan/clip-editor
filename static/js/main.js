@@ -9,6 +9,7 @@ import * as exportUi from "./export_ui.js";
 import * as assetsUi from "./assets_ui.js";
 import * as projectsUi from "./projects_ui.js";
 import * as settingsUi from "./settings_ui.js";
+import * as subtitles from "./subtitles.js";
 import { connect, disconnect } from "./socket.js";
 import { el, clear, timecode, clamp, debounce } from "./util.js";
 
@@ -138,6 +139,8 @@ function bindHeader() {
   $("btn-undo").addEventListener("click", () => safeRun(() => S.undo()));
   $("btn-redo").addEventListener("click", () => safeRun(() => S.redo()));
   $("btn-import").addEventListener("click", openImport);
+  const subBtn = $("btn-subtitle");
+  if (subBtn) subBtn.addEventListener("click", addSubtitleFromTopbar);
   S.bus.on("assets:request-import", openImport);
   $("btn-snap").addEventListener("click", async () => {
     try {
@@ -147,6 +150,16 @@ function bindHeader() {
       toast("快照失败：" + e.message, "error");
     }
   });
+}
+
+// 顶栏「字幕」：在播放头处加一条字幕并直接进入编辑
+async function addSubtitleFromTopbar() {
+  if (!S.state.pid) return;
+  S.setPlaying(false);
+  const sub = await subtitles.addSubtitleAtPlayhead("新字幕");
+  if (!sub) return;
+  subtitles.selectSubtitle(sub.id);
+  toast("已添加字幕，在右侧检查器编辑内容", "ok");
 }
 
 function updateHeader() {
@@ -274,6 +287,16 @@ async function splitSelected() {
 }
 
 async function deleteSelected() {
+  // 字幕优先：字幕不在 clip 体系里，走独立的删除接口
+  const sid = S.state.selectedSubtitleId;
+  if (sid) {
+    await safeRun(async () => {
+      await subtitles.removeSubtitle(sid);
+      toast("已删除字幕", "ok");
+    });
+    return;
+  }
+
   const cid = S.state.selectedClipId;
   if (!cid) return;
   await safeRun(async () => {

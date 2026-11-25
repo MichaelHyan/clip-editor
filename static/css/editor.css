@@ -278,6 +278,12 @@ button { cursor: pointer; }
 }
 .tl-btn:hover { background: #2f343f; }
 .tl-btn.wide { padding: 0 12px; }
+.tl-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--line2);
+}
 
 .tl-spacer { flex: 1 1 auto; }
 .tl-hint {
@@ -325,6 +331,7 @@ button { cursor: pointer; }
   font-size: 12px;
   flex: 0 0 auto;
   overflow: hidden;
+  position: relative;
 }
 .tl-head.type-video { border-left: 3px solid var(--v1); }
 .tl-head.type-audio { border-left: 3px solid var(--aud); }
@@ -338,6 +345,8 @@ button { cursor: pointer; }
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 12px;
+  cursor: text;
+  user-select: none;
 }
 .tl-head-btns { display: flex; gap: 2px; }
 
@@ -358,6 +367,55 @@ button { cursor: pointer; }
   border-color: rgba(76, 141, 255, .5);
   color: var(--acc);
 }
+.tl-head-btn.danger { font-size: 13px; }
+.tl-head-btn.danger:hover {
+  background: rgba(226, 74, 74, .22);
+  color: #e24a4a;
+}
+
+/* 轨道头：拖动排序 / 重命名 / 类型切换 */
+.tl-head { cursor: grab; }
+.tl-head:active { cursor: grabbing; }
+.tl-head.dragging-head { opacity: .45; }
+
+.tl-head-insert {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--acc);
+  box-shadow: 0 0 6px rgba(76, 141, 255, .8);
+  display: none;
+  z-index: 12;
+  pointer-events: none;
+}
+
+.tl-head-name-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--acc);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--txt);
+  font-size: 12px;
+  outline: none;
+}
+
+/* 轨道高度拖拽把手：贴在行下边缘（行是 overflow:hidden，不能用负偏移） */
+.tl-head-resize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 5px;
+  cursor: ns-resize;
+  z-index: 5;
+}
+.tl-head-resize:hover { background: rgba(76, 141, 255, .55); }
+.tl-head.resizing-head { background: rgba(76, 141, 255, .08); }
+.tl-head.resizing-head .tl-head-resize { background: rgba(76, 141, 255, .75); }
 
 .tl-scroll {
   flex: 1 1 auto;

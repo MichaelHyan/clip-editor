@@ -45,6 +45,10 @@ def get_project(pid: str) -> Any:
         return C.ok(ws.timeline())
 
 
+_SETTINGS_ENUMS = {
+    "proxy_mode": ("off", "auto", "always"),
+}
+
 _SETTINGS_LIMITS = {
     "width": (160, 7680),
     "height": (120, 4320),
@@ -59,6 +63,14 @@ def _validate_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
         if not path.startswith("settings."):
             continue
         key = path.split(".", 1)[1]
+        enum = _SETTINGS_ENUMS.get(key)
+        if enum:
+            val = str(value or "").lower()
+            if val not in enum:
+                raise ValueError("设置项 %s 只能取 %s，收到 %s"
+                                 % (key, "/".join(enum), value))
+            patch[path] = val
+            continue
         lim = _SETTINGS_LIMITS.get(key)
         if not lim:
             continue
@@ -153,18 +165,32 @@ def delete_track(pid: str, tid: str) -> Any:
         tr = project_mod.find_track(ws.project, tid)
         if tr is None:
             return C.err("轨道不存在", 404)
-        for cid in list(tr.get("clips") or []):
-            ws.drop_clip(cid)
+
         before = copy.deepcopy(ws.project)
+        # 被删轨道上的片段必须在 drop_clip 之前快照进撤销栈，
+        # 否则「删除轨道」永久不可逆：轨道能撤销回来，片段文件却已删。
+        clip_ids = list(tr.get("clips") or [])
+        undo_states = [{"target": "project", "state": before}]
+        redo_states = []
+        for cid in clip_ids:
+            c = ws.clips.get(cid)
+            if c is not None:
+                undo_states.append({"target": "clip", "id": cid,
+                                    "state": copy.deepcopy(c)})
+            redo_states.append({"target": "clip", "id": cid, "state": None})
+            ws.drop_clip(cid)
+
         ws.project = project_mod.remove_track(ws.project, tid)
         ws.project["rev"] = int(ws.project.get("rev", 1)) + 1
         ws.save_project()
         after = copy.deepcopy(ws.project)
-        ws.commit("删除轨道",
-                  [{"target": "project", "state": before}],
-                  [{"target": "project", "state": after}],
-                  C.client_id())
+
+        redo_states.insert(0, {"target": "project", "state": after})
+        ws.commit("删除轨道", undo_states, redo_states, C.client_id())
+
         realtime.emit_project(pid, after, "track_removed", C.client_id())
+        for cid in clip_ids:
+            realtime.emit_clip_removed(pid, cid, C.client_id())
         return C.ok(after)
 
 
@@ -183,13 +209,26 @@ def patch_track(pid: str, tid: str) -> Any:
         before = copy.deepcopy(ws.project)
         allowed = {"name", "muted", "hidden", "locked", "height", "index", "type"}
         for k, v in patch.items():
-            if k in allowed:
-                if k == "height":
-                    tr[k] = max(28, min(240, int(v)))
-                elif k == "index":
-                    tr[k] = int(v)
-                else:
-                    tr[k] = v
+            if k not in allowed:
+                continue
+            if k == "height":
+                tr[k] = max(28, min(240, int(v)))
+            elif k == "index":
+                tr[k] = int(v)
+            elif k == "type":
+                t = str(v or "")
+                if t not in project_mod.TRACK_TYPES:
+                    return C.err("非法轨道类型: " + t, 400)
+                if t != tr.get("type") and (tr.get("clips") or []):
+                    return C.err(
+                        "轨道上还有 %d 个片段，不能改类型" % len(tr["clips"]), 400)
+                tr[k] = t
+            elif k == "name":
+                nm = str(v or "").strip()
+                if nm:
+                    tr[k] = nm[:40]
+            else:
+                tr[k] = v
         ws.project["tracks"].sort(key=lambda t: t.get("index", 0))
         for i, t in enumerate(ws.project["tracks"]):
             t["index"] = i

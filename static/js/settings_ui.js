@@ -126,6 +126,21 @@ function render() {
   }
   body.appendChild(row("采样率", srSel));
 
+  // ---- 转码策略
+  const PROXY_MODES = [
+    ["off", "用源文件（不转码，推荐）"],
+    ["auto", "仅编码不兼容时转码"],
+    ["always", "总是转码（大文件也转，较慢）"],
+  ];
+  const proxySel = el("select", { class: "insp-select", id: "set-proxy-mode" });
+  const curMode = st.proxy_mode || "off";
+  for (const [v, label] of PROXY_MODES) {
+    const o = el("option", { value: v }, label);
+    if (v === curMode) o.selected = true;
+    proxySel.appendChild(o);
+  }
+  body.appendChild(row("转码策略", proxySel));
+
   // ---- 背景
   const bgIn = el("input", { type: "color", class: "insp-color", id: "set-bg",
     value: st.background || "#000000" });
@@ -134,7 +149,9 @@ function render() {
   body.appendChild(el("div", { class: "settings-hint" },
     "画布尺寸决定预览和导出的最终分辨率。\n" +
     "帧率影响导出编码与关键帧对齐（导出时源会被重采样到此帧率）。\n" +
-    "改动立即生效，已有片段会按新画布重新适配（等比缩放留黑边）。"));
+    "改动立即生效，已有片段会按新画布重新适配（等比缩放留黑边）。\n" +
+    "转码策略：默认用源文件流播，最快且不占 CPU。\n" +
+    "仅当画面黑屏/卡顿且编码为 hevc/mpeg4/wmv3 时才需要转码。"));
 
   document.getElementById("settings-save").onclick = save;
   document.getElementById("settings-info").textContent = "改动会立即应用";
@@ -155,6 +172,7 @@ async function save() {
     "settings.fps": Number(document.getElementById("set-fps").value),
     "settings.sample_rate": Number(document.getElementById("set-sr").value),
     "settings.background": document.getElementById("set-bg").value,
+    "settings.proxy_mode": document.getElementById("set-proxy-mode").value,
   };
   try {
     await api.patchProject(state.pid, patch);

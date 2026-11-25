@@ -14,6 +14,8 @@ DEFAULT_SETTINGS = {
     "sample_rate": 48000,
     "channels": 2,
     "background": "#000000",
+    # 转码策略：off=用源文件 / auto=仅编码不兼容时 / always=总是
+    "proxy_mode": "off",
 }
 
 
@@ -33,6 +35,39 @@ def make_track(ttype: str, name: Optional[str] = None, index: int = 0) -> Dict[s
         "hidden": False,
         "height": 64,
     }
+
+
+def _ensure_subtitle_track(p: Dict[str, Any]) -> Dict[str, Any]:
+    """保证项目里有一条 subtitle 轨。
+
+    字幕入口（时间轴 SUB 轨头的「+」、字幕块渲染）只认 `type == "subtitle"`。
+    早期版本用空的 effect 轨（FX1）占位，这里就地改型，保留 track_id 以免
+    影响已有引用；空轨没有片段，改型是安全的。
+    """
+    tracks = p.get("tracks") or []
+    if not tracks:
+        return p
+    if any(t.get("type") == "subtitle" for t in tracks):
+        return p
+
+    # 1) 优先复用一条空的 effect 轨（早期占位）
+    for tr in tracks:
+        if tr.get("type") == "effect" and not (tr.get("clips") or []):
+            tr["type"] = "subtitle"
+            if str(tr.get("name") or "").upper().startswith("FX"):
+                tr["name"] = "SUB1"
+            return p
+
+    # 2) 没有可复用的空轨：插到最后一条 video 轨之后
+    tr = make_track("subtitle", "SUB1", 0)
+    idx = 0
+    for i, t in enumerate(tracks):
+        if t.get("type") == "video":
+            idx = i + 1
+    tracks.insert(idx, tr)
+    for i, t in enumerate(tracks):
+        t["index"] = i
+    return p
 
 
 def make_project(name: str = "未命名项目", settings: Optional[Dict[str, Any]] = None,
@@ -70,6 +105,8 @@ def normalize(project: Dict[str, Any]) -> Dict[str, Any]:
     st = dict(DEFAULT_SETTINGS)
     st.update(p.get("settings") or {})
     p["settings"] = st
+    if str(p["settings"].get("proxy_mode") or "").lower() not in ("off", "auto", "always"):
+        p["settings"]["proxy_mode"] = "off"
     p.setdefault("tracks", [])
     p.setdefault("markers", [])
     p.setdefault("subtitles", [])
@@ -92,6 +129,7 @@ def normalize(project: Dict[str, Any]) -> Dict[str, Any]:
         tr.setdefault("muted", False)
         tr.setdefault("hidden", False)
         tr.setdefault("height", 64)
+    _ensure_subtitle_track(p)
     p["tracks"].sort(key=lambda t: t.get("index", 0))
     return p
 

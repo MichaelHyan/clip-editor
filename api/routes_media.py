@@ -5,7 +5,7 @@ import os
 import threading
 from typing import Any
 
-from flask import Blueprint, Response, send_file
+from flask import Blueprint, Response, request, send_file
 
 from core import config as cfg
 from core import media as media_mod
@@ -121,9 +121,20 @@ def waveform() -> Any:
 @C.wrap
 def proxy_state() -> Any:
     path = C.check_path(C.arg("path"))
-    st = media_mod.proxy_state(path)
+    want_audio = C.arg("audio") in ("1", "true", "yes")
+    st = media_mod.proxy_state(path, audio=True if want_audio else None)
     st["original"] = path
     return C.ok(st)
+
+
+@bp.route("/audio-proxy", methods=["POST", "GET"])
+@C.wrap
+def audio_proxy_build() -> Any:
+    """抽音轨成 .m4a（`-vn`，aac 源直接 copy），供前端 decodeAudioData。"""
+    b = C.body() if request.method == "POST" else {}
+    path = C.check_path(b.get("path") or C.arg("path"))
+    force = bool(b.get("force")) or C.arg("force") in ("1", "true", "yes")
+    return C.ok(media_mod.ensure_audio_proxy(path, force))
 
 
 @bp.route("/proxy", methods=["POST"])
@@ -146,16 +157,19 @@ def stream() -> Any:
     path = C.check_path(C.arg("path"))
     if not os.path.isfile(path):
         return C.err("文件不存在", 404)
-    mime, _ = mimetypes.guess_type(path)
+    # 代理未就绪时回退原文件（大体积但编码兼容的源浏览器能直接流式播放），
+    # 绝不再把转码中的半成品喂给 <video>。
+    target = path
+    want_audio = C.arg("audio") in ("1", "true", "yes")
+    if C.arg("proxy") in ("1", "true", "yes"):
+        st = media_mod.proxy_state(path, audio=True if want_audio else None)
+        if st.get("ready"):
+            target = st["path"]
+    mime, _ = mimetypes.guess_type(target)
     if not mime:
         mime = "application/octet-stream"
-    target = path
-    if C.arg("proxy") in ("1", "true", "yes"):
-        st = media_mod.proxy_state(path)
-        if st["ready"]:
-            target = st["path"]
-            ext = os.path.splitext(target)[1].lower()
-            mime = "audio/mp4" if ext in (".m4a", ".aac") else "video/mp4"
+    if os.path.splitext(target)[1].lower() in (".m4a", ".aac"):
+        mime = "audio/mp4"
     resp = send_file(target, mimetype=mime, conditional=True,
                      as_attachment=False, download_name=os.path.basename(target))
     resp.headers["Accept-Ranges"] = "bytes"

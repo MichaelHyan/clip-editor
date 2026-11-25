@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import time
 import shutil
 import subprocess
 import threading
@@ -316,6 +317,82 @@ def waveform(path: str, buckets: int = 1200, sample_rate: int = 4000) -> List[fl
     return peaks
 
 
+def _meta_path(out: str) -> str:
+    return out + ".meta"
+
+
+def _mtime(path: str) -> float:
+    try:
+        return round(os.path.getmtime(path), 3)
+    except OSError:
+        return 0.0
+
+
+def proxy_meta(out: str) -> Dict[str, Any]:
+    """读代理的完成标记。没有有效标记 = 代理不可用（可能是半成品）。"""
+    try:
+        with open(_meta_path(out), "r", encoding="utf-8") as f:
+            m = json.load(f)
+        return m if isinstance(m, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _meta_ok(out: str, src: str = "") -> bool:
+    """代理是否真正可用：必须有完成标记，且源文件没变。"""
+    m = proxy_meta(out)
+    if not (m.get("short_gop") or m.get("audio_only")):
+        return False
+    if src and m.get("source_size") is not None:
+        try:
+            if int(m["source_size"]) != os.path.getsize(src):
+                return False
+        except (OSError, TypeError, ValueError):
+            return False
+    return True
+
+
+def _write_meta(out: str, payload: Dict[str, Any]) -> None:
+    tmp = _meta_path(out) + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+        os.replace(tmp, _meta_path(out))
+    except OSError:
+        pass
+
+
+def _lock_path(out: str) -> str:
+    return out + ".lock"
+
+
+def _acquire_lock(out: str) -> bool:
+    """跨进程转码锁（O_EXCL 创建，2 小时视为过期）。"""
+    lp = _lock_path(out)
+    try:
+        if os.path.isfile(lp):
+            if time.time() - os.path.getmtime(lp) < 7200:
+                return False
+            os.remove(lp)
+    except OSError:
+        pass
+    try:
+        fd = os.open(lp, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, ("%d %s" % (os.getpid(),
+                                 time.strftime("%Y-%m-%d %H:%M:%S"))).encode())
+        os.close(fd)
+        return True
+    except OSError:
+        return False
+
+
+def _release_lock(out: str) -> None:
+    try:
+        os.remove(_lock_path(out))
+    except OSError:
+        pass
+
+
 def proxy_path(path: str) -> str:
     fp = _fingerprint(path)
     return _cache_file("proxy", f"{fp}.mp4")
@@ -326,19 +403,78 @@ def proxy_audio_path(path: str) -> str:
     return _cache_file("proxy", f"{fp}.m4a")
 
 
-def proxy_state(path: str) -> Dict[str, Any]:
+def proxy_state(path: str, audio: Optional[bool] = None) -> Dict[str, Any]:
+    """代理就绪状态。
+
+    只认「主文件 + .meta 完成标记」同时存在。早期版本只看文件存在，
+    导致转码中的半成品被当成可用代理 —— `-movflags +faststart` 要等
+    转码结束才回填 moov atom，半成品不是有效 mp4，前端必然解码失败。
+    """
     info = probe(path)
     kind = info.get("kind")
-    p = proxy_audio_path(path) if kind == "audio" else proxy_path(path)
-    if os.path.isfile(p):
-        return {"ready": True, "path": p, "size": os.path.getsize(p),
-                "browser_ok": bool(info.get("browser_ok", True)),
-                "issues": info.get("browser_issues") or [],
-                "kind": kind}
-    return {"ready": False, "path": p, "size": 0,
+    use_audio = bool(audio) if audio is not None else (kind == "audio")
+    p = proxy_audio_path(path) if use_audio else proxy_path(path)
+    exists = os.path.isfile(p)
+    ready = exists and _meta_ok(p, path)
+    return {"ready": ready, "path": p,
+            "size": os.path.getsize(p) if exists else 0,
+            "meta": proxy_meta(p) if ready else {},
+            "audio_only": use_audio,
             "browser_ok": bool(info.get("browser_ok", True)),
             "issues": info.get("browser_issues") or [],
             "kind": kind}
+
+
+
+
+def ensure_audio_proxy(path: str, force: bool = False) -> Dict[str, Any]:
+    """只抽音轨成 .m4a 音频代理。
+
+    视频代理要整段 4GB 转完才能用（几十分钟），而音频只需 `-vn` 抽一条
+    aac 轨（源本身是 aac 时直接 `-c:a copy`，十几秒）。前端拿这个小文件
+    才能完整下载并 decodeAudioData。
+    """
+    path = str(path).replace("\\", "/")
+    if not os.path.isfile(path):
+        return {"ready": False, "path": None, "status": "missing-source"}
+    info = probe(path)
+    if not info.get("has_audio"):
+        return {"ready": False, "path": None, "status": "no-audio",
+                "original": path}
+    out = proxy_audio_path(path)
+    if not force and os.path.isfile(out) and _meta_ok(out, path):
+        return {"ready": True, "path": out, "status": "cached",
+                "size": os.path.getsize(out), "original": path}
+    if not _acquire_lock(out):
+        return {"ready": False, "path": out, "status": "running",
+                "original": path}
+    tmp = out + ".part.m4a"
+    try:
+        acodec = str(info.get("audio_codec") or "").lower()
+        cmd = [FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-i", path, "-vn"]
+        if acodec in ("aac", "mp3"):
+            cmd += ["-c:a", "copy"]
+        else:
+            cmd += ["-c:a", "aac", "-b:a", "192k"]
+        cmd += ["-movflags", "+faststart", tmp]
+        r = _run(cmd, timeout=3600)
+        if r["rc"] != 0 or not os.path.isfile(tmp):
+            return {"ready": False, "path": None, "status": "failed",
+                    "error": (r["err"] or "")[:400], "original": path}
+        os.replace(tmp, out)
+        _write_meta(out, {"audio_only": True,
+                          "source_size": info.get("size"),
+                          "source_mtime": _mtime(path),
+                          "created": _fingerprint(path)})
+        return {"ready": True, "path": out, "status": "created",
+                "size": os.path.getsize(out), "original": path}
+    finally:
+        try:
+            if os.path.isfile(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+        _release_lock(out)
 
 
 def ensure_proxy(path: str, force: bool = False) -> Dict[str, Any]:
@@ -357,49 +493,28 @@ def ensure_proxy(path: str, force: bool = False) -> Dict[str, Any]:
     need_by_codec = not browser_ok
 
     if kind == "audio":
-        if not need_by_codec and not force:
-            return {"ready": False, "path": None, "status": "audio-ok", "original": path}
-        out = proxy_audio_path(path)
-        if os.path.isfile(out) and not force:
-            return {"ready": True, "path": out, "status": "cached",
-                    "size": os.path.getsize(out), "original": path}
-        try:
-            cmd = [FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-i", path,
-                   "-vn", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", out]
-            r = _run(cmd, timeout=1800)
-            if r["rc"] != 0 or not os.path.isfile(out):
-                return {"ready": False, "path": None, "status": "failed",
-                        "error": (r["err"] or "")[:400], "original": path}
-            return {"ready": True, "path": out, "status": "created",
-                    "size": os.path.getsize(out), "original": path}
-        except OSError as e:
-            return {"ready": False, "path": None, "status": "failed",
-                    "error": str(e), "original": path}
+        return ensure_audio_proxy(path, force)
 
     size_mb = (info.get("size") or 0) / (1024 * 1024)
     if not force and not need_by_codec and size_mb < float(c.get("threshold_mb", 40)):
         return {"ready": False, "path": None, "status": "below-threshold", "original": path}
 
     out = proxy_path(path)
-    meta_path = out + ".meta"
-    if os.path.isfile(out) and not force:
-        meta_ok = False
-        try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                m = json.load(f)
-            meta_ok = bool(m.get("short_gop"))
-        except (OSError, ValueError):
-            meta_ok = False
-        if meta_ok:
-            return {"ready": True, "path": out, "status": "cached",
-                    "size": os.path.getsize(out), "original": path}
-        # 旧代理（长 GOP）→ 重建
-        force = True
+    if not force and os.path.isfile(out) and _meta_ok(out, path):
+        return {"ready": True, "path": out, "status": "cached",
+                "size": os.path.getsize(out), "original": path}
 
     with _LOCK:
         if out in _PROXY_JOBS.values():
             return {"ready": False, "path": out, "status": "running", "original": path}
         _PROXY_JOBS[out] = out
+    if not _acquire_lock(out):
+        with _LOCK:
+            _PROXY_JOBS.pop(out, None)
+        return {"ready": False, "path": out, "status": "running", "original": path}
+
+    # 写 .part 临时文件，成功后原子改名：半成品永远不会被 proxy_state 看到
+    tmp = out + ".part.mp4"
     try:
         max_h = int(c.get("max_height", 720))
         if info.get("has_video"):
@@ -422,20 +537,25 @@ def ensure_proxy(path: str, force: bool = False) -> Dict[str, Any]:
             cmd += ["-c:a", "aac", "-b:a", "128k"]
         else:
             cmd += ["-an"]
-        cmd += ["-movflags", "+faststart", out]
+        cmd += ["-movflags", "+faststart", tmp]
         r = _run(cmd, timeout=3600)
-        if r["rc"] != 0 or not os.path.isfile(out):
+        if r["rc"] != 0 or not os.path.isfile(tmp):
             return {"ready": False, "path": None, "status": "failed",
                     "error": (r["err"] or "")[:400], "original": path}
-        try:
-            with open(out + ".meta", "w", encoding="utf-8") as f:
-                json.dump({"short_gop": True, "fps": fps_hint,
-                           "created": _fingerprint(path)}, f)
-        except OSError:
-            pass
+        os.replace(tmp, out)
+        _write_meta(out, {"short_gop": True, "fps": fps_hint,
+                          "source_size": info.get("size"),
+                          "source_mtime": _mtime(path),
+                          "created": _fingerprint(path)})
         return {"ready": True, "path": out, "status": "created",
                 "size": os.path.getsize(out), "original": path}
     finally:
+        try:
+            if os.path.isfile(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+        _release_lock(out)
         with _LOCK:
             _PROXY_JOBS.pop(out, None)
 

@@ -50,9 +50,10 @@ const PATCH = (url, body) => request("PATCH", url, { body: body || {} });
 const DEL = (url, body) => request("DELETE", url, { body: body || {} });
 
 // 流媒体 URL（不经 fetch，直接给 <video>/<img>）
-export function mediaUrl(path, proxy = false) {
+export function mediaUrl(path, proxy = false, audio = false) {
   const q = new URLSearchParams({ path });
   if (proxy) q.set("proxy", "1");
+  if (audio) q.set("audio", "1");
   return "/api/media/stream?" + q.toString();
 }
 export function thumbUrl(path, t = 0, w = 320) {
@@ -74,6 +75,8 @@ export const api = {
   // 轨道
   addTrack: (pid, type, name, index) => POST(`/api/projects/${pid}/tracks`, { type, name, index }),
   delTrack: (pid, tid) => DEL(`/api/projects/${pid}/tracks/${tid}`),
+  patchTrack: (pid, tid, patch) =>
+    PATCH(`/api/projects/${pid}/tracks/${tid}`, { patch }),
   reorderTracks: (pid, order) => POST(`/api/projects/${pid}/tracks/reorder`, { order }),
 
   // 标记
@@ -134,6 +137,7 @@ export const api = {
   proxyState: (path) => GET("/api/media/proxy", { path }),
   playable: (path) => GET("/api/media/playable", { path }),
   buildProxy: (path, opts) => POST("/api/media/proxy" + queryOf({ path, ...(opts || {}) }), {}),
+  audioProxy: (path, force) => POST("/api/media/audio-proxy", { path, force: !!force }),
   mediaConfig: () => GET("/api/media/config"),
 
   // 效果/工具（内部注册表）

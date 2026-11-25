@@ -216,6 +216,8 @@ export function selectClip(cid, opts = {}) {
   if (state.selectedClipId === cid && !opts.force) return;
   state.selectedClipId = cid || null;
   state.selectedToolInstance = null;
+  // 选中片段即离开字幕编辑页，否则检查器会一直停在字幕面板
+  if (cid) state.selectedSubtitleId = null;
   bus.emit("selection:changed", state.selectedClipId);
   if (cid && opts.scrollIntoView) bus.emit("timeline:reveal", cid);
 }

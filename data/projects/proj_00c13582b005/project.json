@@ -7,52 +7,16 @@
     "fps": 60,
     "sample_rate": 48000,
     "channels": 2,
-    "background": "#000000"
+    "background": "#000000",
+    "proxy_mode": "off"
   },
   "tracks": [
     {
-      "id": "trk_vcae076",
-      "type": "video",
-      "name": "V2",
+      "id": "trk_ef41a77",
+      "type": "subtitle",
+      "name": "SUB1",
       "index": 0,
       "clips": [],
-      "locked": false,
-      "muted": false,
-      "hidden": false,
-      "height": 64
-    },
-    {
-      "id": "trk_v562b1f",
-      "type": "video",
-      "name": "V1",
-      "index": 1,
-      "clips": [
-        "clip_4529f5f43695"
-      ],
-      "locked": false,
-      "muted": false,
-      "hidden": false,
-      "height": 64
-    },
-    {
-      "id": "trk_ef41a77",
-      "type": "effect",
-      "name": "FX1",
-      "index": 2,
-      "clips": [],
-      "locked": false,
-      "muted": false,
-      "hidden": false,
-      "height": 64
-    },
-    {
-      "id": "trk_af8377f",
-      "type": "audio",
-      "name": "A1",
-      "index": 3,
-      "clips": [
-        "clip_0ef63123cc14"
-      ],
       "locked": false,
       "muted": false,
       "hidden": false,
@@ -64,10 +28,10 @@
   "shared_playhead": false,
   "meta": {
     "created": 1795610837.5085375,
-    "updated": 1795618654.9335158,
+    "updated": 1795621951.651287,
     "author": "ui",
     "description": ""
   },
-  "rev": 144,
+  "rev": 219,
   "subtitles": []
 }

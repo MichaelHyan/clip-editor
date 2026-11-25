@@ -21,7 +21,7 @@ import { evalTrack } from "./keyframe.js";
 import * as assetsUi from "./assets_ui.js";
 import * as subtitles from "./subtitles.js";
 
-const HEAD_W = 148;
+const HEAD_W = 196;
 const RULER_H = 26;
 const MIN_SPAN = 30;
 const EDGE_PX = 8;
@@ -34,6 +34,8 @@ let mCanvas = null;
 let mRuler = null;
 let playheadEl = null;
 let drag = null;
+let headDrag = null;
+let headResize = null;
 let scrubbing = false;
 let hoverLaneEl = null;
 let suppressRender = false;
@@ -165,6 +167,15 @@ export function init() {
     el("button", { class: "tl-btn", title: "缩小 (Ctrl+滚轮)", onclick: () => zoomBy(1 / 1.4) }, "\u2212"),
     el("button", { class: "tl-btn", title: "放大", onclick: () => zoomBy(1.4) }, "+"),
     el("button", { class: "tl-btn wide", title: "适应窗口", onclick: fitToWindow }, "适应"),
+    el("span", { class: "tl-sep" }),
+    el("button", {
+      class: "tl-btn wide", title: "添加一条视频轨（置于最上层）",
+      onclick: () => addTrack("video"),
+    }, "+ 视频轨"),
+    el("button", {
+      class: "tl-btn wide", title: "添加一条音频轨（置于最下层）",
+      onclick: () => addTrack("audio"),
+    }, "+ 音频轨"),
     el("span", { class: "tl-spacer" }),
     el("span", { class: "tl-hint" }, "空格 播放/暂停 · S 切分 · ←/→ 逐帧 · Del 删除片段 · Ctrl+Z/Y 撤销重做"),
   ]);
@@ -212,7 +223,7 @@ export function init() {
 
 function render() {
   if (!mCanvas || suppressRender) return;
-  if (drag) return;      // 拖拽期间禁止重建节点，否则 drag.node 变游离
+  if (drag || headDrag || headResize) return;   // 拖拽期间禁止重建节点，否则节点变游离
   const sp = span();
   const width = Math.max(400, t2x(sp));
   mCanvas.style.width = width + "px";
@@ -257,21 +268,51 @@ function renderHeads() {
   const inner = el("div", { class: "tl-heads-inner" });
   inner.appendChild(el("div", { class: "tl-head-spacer", style: { height: RULER_H + "px" } }));
   for (const tr of tracks()) {
+    const nameEl = el("div", {
+      class: "tl-head-name",
+      title: "双击重命名 · 按住拖动可调整轨道顺序",
+    }, tr.name || tr.type.toUpperCase());
+    nameEl.addEventListener("dblclick", (ev) => {
+      ev.stopPropagation();
+      startRenameTrack(tr, nameEl);
+    });
+
+    const btns = tr.type === "subtitle"
+      ? [headBtn("+", "在播放头处加字幕", false, addSubtitleHere)]
+      : [
+          headBtn("M", "静音", tr.muted, () => toggleTrack(tr.id, "muted")),
+          headBtn("H", "隐藏", tr.hidden, () => toggleTrack(tr.id, "hidden")),
+          headBtn("L", "锁定", tr.locked, () => toggleTrack(tr.id, "locked")),
+          // 类型切换只对空轨道可用，且仅 video <-> audio
+          headBtn("\u21C4", "切换类型（视频/音频，仅空轨道）", false,
+                  () => changeTrackType(tr)),
+          // 字幕轨不提供删除：normalize() 会重新补一条，删了只会让人困惑
+          deleteTrackBtn(tr),
+        ];
+
     const row = el("div", {
       class: "tl-head type-" + tr.type,
       dataset: { track: tr.id },
       style: { height: (tr.height || 64) + "px" },
     }, [
-      el("div", { class: "tl-head-name" }, tr.name || tr.type.toUpperCase()),
-      el("div", { class: "tl-head-btns" },
-        tr.type === "subtitle"
-          ? [headBtn("+", "在播放头处加字幕", false, addSubtitleHere)]
-          : [
-              headBtn("M", "静音", tr.muted, () => toggleTrack(tr.id, "muted")),
-              headBtn("H", "隐藏", tr.hidden, () => toggleTrack(tr.id, "hidden")),
-              headBtn("L", "锁定", tr.locked, () => toggleTrack(tr.id, "locked")),
-            ]),
+      nameEl,
+      el("div", { class: "tl-head-btns" }, btns),
     ]);
+
+    // 下边缘把手：拖动调整轨道高度
+    const rz = el("div", {
+      class: "tl-head-resize",
+      title: "拖动调整轨道高度（双击恢复默认 64px）",
+    });
+    rz.addEventListener("pointerdown", (ev) => onHeadResizeDown(ev, tr, row));
+    rz.addEventListener("dblclick", (ev) => {
+      ev.stopPropagation();
+      patchTrackProps(tr.id, { height: 64 }).then(() => render());
+    });
+    row.appendChild(rz);
+
+    // 整行作为拖动排序的手柄；按钮/输入框在 onHeadDown 里排除
+    row.addEventListener("pointerdown", (ev) => onHeadDown(ev, tr));
     inner.appendChild(row);
   }
   mHeads.appendChild(inner);
@@ -297,6 +338,303 @@ function headBtn(text, title, active, onclick) {
       onclick();
     },
   }, text);
+}
+
+function deleteTrackBtn(tr) {
+  return el("button", {
+    class: "tl-head-btn danger",
+    title: "删除轨道「" + (tr.name || tr.type) + "」",
+    onclick: (ev) => {
+      ev.stopPropagation();
+      deleteTrack(tr);
+    },
+  }, "\u00D7");
+}
+
+// ---------------------------------------------------------------- 轨道增删
+
+// 命名：取同类型轨道名末尾数字的最大值 +1（V2/V1 -> V3，A1 -> A2）
+function nextTrackName(type) {
+  let maxNum = 0;
+  for (const t of tracks()) {
+    if (t.type !== type) continue;
+    const m = String(t.name || "").match(/(\d+)\s*$/);
+    if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
+  }
+  return (type === "audio" ? "A" : "V") + (maxNum + 1);
+}
+
+async function addTrack(type) {
+  if (!state.pid) return;
+  const name = nextTrackName(type);
+  // 视频轨置顶必须传负数：后端 append 后按 index 稳定排序，
+  // 传 0 会被原有 index=0 的轨道压在后面。音频轨传大数落到底部。
+  const index = type === "video" ? -1 : 9999;
+  try {
+    const res = await fetch(`/api/projects/${state.pid}/tracks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, name, index }),
+    });
+    const d = await res.json();
+    if (!d.ok) throw new Error(d.error || "添加失败");
+    applyProject(d.data);
+    bus.emit("toast", { msg: "已添加轨道 " + name, kind: "ok" });
+  } catch (e) {
+    console.error("[timeline] 添加轨道失败", e);
+    bus.emit("toast", { msg: "添加轨道失败：" + e.message, kind: "error" });
+  }
+}
+
+async function deleteTrack(tr) {
+  if (!state.pid || !tr) return;
+  const n = (tr.clips || []).length;
+  const msg = n
+    ? `删除轨道「${tr.name || tr.type}」？\n\n该轨道上的 ${n} 个片段会一并删除（源文件不受影响）。`
+    : `删除轨道「${tr.name || tr.type}」？`;
+  if (!confirm(msg)) return;
+  try {
+    const res = await fetch(`/api/projects/${state.pid}/tracks/${tr.id}`, {
+      method: "DELETE",
+    });
+    const d = await res.json();
+    if (!d.ok) throw new Error(d.error || "删除失败");
+    await refresh();
+    // 被删轨道上的片段已不存在，清掉指向它的选中状态
+    if (state.selectedClipId && !state.clips[state.selectedClipId]) {
+      selectClip(null);
+    }
+    bus.emit("toast", { msg: "已删除轨道 " + (tr.name || tr.type), kind: "ok" });
+  } catch (e) {
+    console.error("[timeline] 删除轨道失败", e);
+    bus.emit("toast", { msg: "删除轨道失败：" + e.message, kind: "error" });
+  }
+}
+
+// ---------------------------------------------------------------- 轨道重命名
+
+function startRenameTrack(tr, nameEl) {
+  const input = el("input", {
+    class: "tl-head-name-input",
+    value: tr.name || tr.type,
+  });
+  nameEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  let done = false;
+  const commit = async (save) => {
+    if (done) return;
+    done = true;
+    const next = input.value.trim();
+    if (save && next && next !== tr.name) {
+      await patchTrackProps(tr.id, { name: next });
+    } else {
+      render();
+    }
+  };
+
+  // 阻止冒泡：否则 pointerdown 会启动轨道拖动
+  input.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+  input.addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    if (ev.key === "Enter") { ev.preventDefault(); commit(true); }
+    else if (ev.key === "Escape") { ev.preventDefault(); commit(false); }
+  });
+  input.addEventListener("blur", () => commit(true));
+}
+
+async function patchTrackProps(tid, patch) {
+  if (!state.pid) return null;
+  try {
+    const pj = await api.patchTrack(state.pid, tid, patch);
+    applyProject(pj);
+    return pj;
+  } catch (e) {
+    console.error("[timeline] 修改轨道失败", e);
+    bus.emit("toast", { msg: "修改轨道失败：" + e.message, kind: "error" });
+    render();
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------- 轨道拖动排序
+
+function onHeadDown(ev, tr) {
+  if (ev.button !== 0) return;
+  // 按钮和重命名输入框不触发排序
+  if (ev.target.closest("button") || ev.target.closest("input")) return;
+
+  const rows = Array.from(mHeads.querySelectorAll(".tl-head")).map((n) => {
+    const r = n.getBoundingClientRect();
+    return { id: n.dataset.track, top: r.top, h: r.height, mid: (r.top + r.bottom) / 2 };
+  });
+  if (rows.length < 2) return;
+
+  headDrag = {
+    tid: tr.id,
+    row: ev.currentTarget,
+    startY: ev.clientY,
+    moved: false,
+    rows,
+    targetIdx: -1,
+  };
+  window.addEventListener("pointermove", onHeadMove);
+  window.addEventListener("pointerup", onHeadUp);
+}
+
+function onHeadMove(ev) {
+  if (!headDrag) return;
+  if (!headDrag.moved && Math.abs(ev.clientY - headDrag.startY) < 4) return;
+  headDrag.moved = true;
+  headDrag.row.classList.add("dragging-head");
+
+  // 插入位置：第一个 mid 大于指针 Y 的行之前
+  let idx = headDrag.rows.length;
+  for (let i = 0; i < headDrag.rows.length; i++) {
+    if (ev.clientY < headDrag.rows[i].mid) { idx = i; break; }
+  }
+  headDrag.targetIdx = idx;
+  showInsertLine(idx);
+}
+
+function showInsertLine(idx) {
+  const inner = mHeads.querySelector(".tl-heads-inner");
+  if (!inner || !headDrag) return;
+  let line = inner.querySelector(".tl-head-insert");
+  if (!line) {
+    line = el("div", { class: "tl-head-insert" });
+    inner.appendChild(line);
+  }
+  const rows = headDrag.rows;
+  const y = idx <= 0
+    ? rows[0].top
+    : (idx >= rows.length ? rows[rows.length - 1].top + rows[rows.length - 1].h : rows[idx].top);
+  const ir = inner.getBoundingClientRect();
+  line.style.top = Math.round(y - ir.top) + "px";
+  line.style.display = "block";
+}
+
+async function onHeadUp() {
+  window.removeEventListener("pointermove", onHeadMove);
+  window.removeEventListener("pointerup", onHeadUp);
+  if (!headDrag) return;
+  const d = headDrag;
+  headDrag = null;
+
+  if (d.row && d.row.isConnected) d.row.classList.remove("dragging-head");
+  const inner = mHeads && mHeads.querySelector(".tl-heads-inner");
+  if (inner) {
+    const line = inner.querySelector(".tl-head-insert");
+    if (line) line.remove();
+  }
+  if (!d.moved || d.targetIdx < 0) return;
+
+  const order = tracks().map((t) => t.id);
+  const from = order.indexOf(d.tid);
+  if (from < 0) return;
+  // 插入线给的是「插到第 idx 位之前」，移除自身后若目标在其后要左移一位
+  let to = d.targetIdx;
+  if (to > from) to -= 1;
+  if (to === from) return;
+
+  order.splice(from, 1);
+  order.splice(to, 0, d.tid);
+
+  try {
+    const pj = await api.reorderTracks(state.pid, order);
+    applyProject(pj);
+  } catch (e) {
+    console.error("[timeline] 轨道排序失败", e);
+    bus.emit("toast", { msg: "轨道排序失败：" + e.message, kind: "error" });
+    render();
+  }
+}
+
+// ---------------------------------------------------------------- 轨道高度
+
+const MIN_TRACK_H = 28;
+const MAX_TRACK_H = 240;
+
+function onHeadResizeDown(ev, tr, row) {
+  if (ev.button !== 0) return;
+  ev.preventDefault();
+  ev.stopPropagation();      // 不要触发整行的拖动排序
+  const lane = mCanvas
+    ? mCanvas.querySelector('.tl-lane[data-track="' + tr.id + '"]')
+    : null;
+  const h0 = row.getBoundingClientRect().height;
+  headResize = {
+    tid: tr.id, tr, row, lane,
+    startY: ev.clientY, origH: h0, h: h0, moved: false,
+  };
+  row.classList.add("resizing-head");
+  window.addEventListener("pointermove", onHeadResizeMove);
+  window.addEventListener("pointerup", onHeadResizeUp);
+}
+
+function onHeadResizeMove(ev) {
+  if (!headResize) return;
+  const dy = ev.clientY - headResize.startY;
+  if (!headResize.moved && Math.abs(dy) < 2) return;
+  headResize.moved = true;
+  const h = clamp(Math.round(headResize.origH + dy), MIN_TRACK_H, MAX_TRACK_H);
+  headResize.h = h;
+  // 直接改 DOM，不重建节点（render 在拖动期间被守卫拦住）
+  headResize.row.style.height = h + "px";
+  if (headResize.lane) headResize.lane.style.height = h + "px";
+  // 乐观写本地高度：positionPlayhead() 用 laneTotalHeight() 读 tracks()
+  if (headResize.tr) headResize.tr.height = h;
+  positionPlayhead();
+  syncHeadsScroll();
+}
+
+async function onHeadResizeUp() {
+  window.removeEventListener("pointermove", onHeadResizeMove);
+  window.removeEventListener("pointerup", onHeadResizeUp);
+  if (!headResize) return;
+  const d = headResize;
+  headResize = null;
+  if (d.row && d.row.isConnected) d.row.classList.remove("resizing-head");
+  if (!d.moved) {
+    // 没移动就什么都没变。这里绝不能 render()：
+    // 双击 = down/up + down/up + dblclick，第一次 up 就重建节点会让
+    // 后续 dblclick 在已游离的旧节点上触发，监听器已消失 -> 双击失效。
+    return;
+  }
+  await patchTrackProps(d.tid, { height: d.h });
+  render();
+}
+
+// ---------------------------------------------------------------- 类型切换
+
+async function changeTrackType(tr) {
+  if (!state.pid || !tr) return;
+  if (tr.type === "subtitle") {
+    bus.emit("toast", { msg: "字幕轨类型固定，不能切换", kind: "info" });
+    return;
+  }
+  if (tr.type !== "video" && tr.type !== "audio") {
+    bus.emit("toast", { msg: "该轨道类型不支持切换", kind: "info" });
+    return;
+  }
+  const n = (tr.clips || []).length;
+  if (n) {
+    bus.emit("toast", {
+      msg: `轨道上还有 ${n} 个片段，请先清空再改类型`,
+      kind: "error",
+    });
+    return;
+  }
+  const next = tr.type === "video" ? "audio" : "video";
+  const nextLabel = next === "video" ? "视频" : "音频";
+  const curLabel = tr.type === "video" ? "视频" : "音频";
+  const newName = nextTrackName(next);
+  if (!confirm(
+    `把轨道「${tr.name || tr.type}」从 ${curLabel} 改为 ${nextLabel}？\n\n` +
+    `轨道会重命名为「${newName}」。\n仅空轨道可以改类型。`
+  )) return;
+  await patchTrackProps(tr.id, { type: next, name: newName });
 }
 
 function renderLanes() {

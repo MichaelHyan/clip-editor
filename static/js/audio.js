@@ -8,9 +8,10 @@
 //   offset 就是墙钟时间，不会再有"音高越高放越快"的耦合。
 
 import { state, bus, tracks, clipsOfTrack, clipStart, clipDuration, resolveClipAt } from "./state.js";
-import { mediaUrl } from "./api.js";
+import { api, mediaUrl } from "./api.js";
 import { dbToLinear, clamp } from "./util.js";
 import { processChannels, buildBuffer } from "./audio_process.js";
+import * as audioCache from "./audio_cache.js";
 
 const LONG_THRESHOLD = 600;
 
@@ -45,8 +46,23 @@ function ensureCtx() {
   return actx;
 }
 
+// 取音频数据：
+//   1) 先让后端把源抽成 .m4a 音频代理（`-vn`，aac 源直接 copy，秒级完成），
+//      这样 4GB 视频也只需下载十几 MB 的音频流
+//   2) 代理不可用时退回原文件（浏览器能直接解 aac 时也能用）
+async function audioStreamUrl(path) {
+  try {
+    const st = await api.audioProxy(path);
+    if (st && st.ready) return { url: mediaUrl(path, true, true), proxy: true };
+  } catch (e) {
+    console.warn("[audio] 音频代理不可用，回退原文件", path, e);
+  }
+  return { url: mediaUrl(path, false), proxy: false };
+}
+
 async function fetchArrayBuffer(path) {
-  const res = await fetch(mediaUrl(path, true));
+  const { url } = await audioStreamUrl(path);
+  const res = await fetch(url);
   if (!res.ok) throw new Error("音频流获取失败 " + res.status);
   return await res.arrayBuffer();
 }
@@ -63,11 +79,35 @@ async function decodeFull(cid) {
   if (kind === "image") return null;
   if (!probe.has_audio && kind !== "audio") return null;
 
+  const cacheKey = audioCache.audioCacheKey(c.media, path);
   const p = (async () => {
     try {
       const ac = ensureCtx();
-      const raw = await fetchArrayBuffer(path);
-      const buf = await ac.decodeAudioData(raw);
+      let buf = null;
+
+      // 1) 本地字节缓存命中：省掉网络下载（音频代理 .m4a 约 36MB）
+      const cached = await audioCache.get(cacheKey);
+      if (cached) {
+        try {
+          buf = await ac.decodeAudioData(cached);
+        } catch (e) {
+          console.warn("[audio] 缓存解码失败，重新下载", cid, e);
+          audioCache.remove(cacheKey).catch(() => {});
+          buf = null;
+        }
+      }
+
+      // 2) 缓存未命中：下载 + 解码，并把压缩字节写回缓存
+      if (!buf) {
+        const raw = await fetchArrayBuffer(path);
+        // decodeAudioData 会 detach 传入的 buffer，所以先复制一份存缓存。
+        // 复制前判大小：源文件 fallback 时可能是 4GB，绝不能白复制。
+        if (raw.byteLength <= audioCache.MAX_ENTRY_BYTES) {
+          audioCache.put(cacheKey, raw.slice(0)).catch(() => {});
+        }
+        buf = await ac.decodeAudioData(raw);
+      }
+
       bufferCache.set(cid, buf);
       return buf;
     } catch (e) {
@@ -359,6 +399,8 @@ export function init() {
       clearCache: () => {
         processedCache.clear();
       },
+      audioCacheStats: () => audioCache.stats(),
+      clearAudioCache: () => audioCache.clear(),
     };
   }
 
